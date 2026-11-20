@@ -7,7 +7,7 @@ from .validate import beyond_asked, validate
 
 def group_for(total: float) -> str:
     """Risk group. Cut-offs are the published SYNTAX groups (low <=22, intermediate 23-32,
-    high >=33); a fractional total such as 22.5 falls in the next group up."""
+    high >=33). A fractional total between cut-offs (22.5, 32.5) is intermediate."""
     if total <= 22:
         return "low"
     if total >= 33:
@@ -77,9 +77,9 @@ def _occlusion_parts(les: Lesion, dominance: str) -> list[Part]:
     parts = [Part("Segments (total occlusion: first segment x5, others x2)", seg)]
     if les.age_over_3_months in ("yes", "unknown"):
         parts.append(Part("Age of occlusion over 3 months or unknown", 1))
-    if les.blunt_stump:
+    if les.blunt_stump is True:
         parts.append(Part("Blunt stump", 1))
-    if les.bridging:
+    if les.bridging is True:
         parts.append(Part("Bridging collaterals", 1))
     if beyond_asked(main, dominance):
         beyond = visualized_points(dominance, main, les.beyond_first_visualized)
@@ -92,7 +92,7 @@ def _occlusion_parts(les: Lesion, dominance: str) -> list[Part]:
 
 def _lesion_parts(les: Lesion, dominance: str) -> list[Part]:
     parts: list[Part] = []
-    if les.occlusion:
+    if les.occlusion is True:
         parts += _occlusion_parts(les, dominance)
     else:
         seg = sum(weight(s, dominance) * 2 for s in les.segments)
@@ -103,17 +103,17 @@ def _lesion_parts(les: Lesion, dominance: str) -> list[Part]:
     elif les.bifurcation in MEDINA:
         m = MEDINA[les.bifurcation]
         parts.append(Part(f"Bifurcation (Medina {m[0]},{m[1]},{m[2]})", m[3]))
-        if les.bifurcation_angle_lt70:
+        if les.bifurcation_angle_lt70 is True:
             parts.append(Part("Bifurcation angle under 70 degrees", 1))
-    if les.aorto_ostial:
+    if les.aorto_ostial is True:
         parts.append(Part("Aorto-ostial lesion", 1))
-    if les.severe_tortuosity:
+    if les.severe_tortuosity is True:
         parts.append(Part("Severe tortuosity", 2))
-    if les.length_gt20 and not les.occlusion:
+    if les.length_gt20 is True and les.occlusion is not True:
         parts.append(Part("Length over 20 mm", 1))
-    if les.heavy_calcification:
+    if les.heavy_calcification is True:
         parts.append(Part("Heavy calcification", 2))
-    if les.thrombus:
+    if les.thrombus is True:
         parts.append(Part("Thrombus", 1))
     return parts
 

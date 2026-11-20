@@ -18,7 +18,7 @@ OUT = Path(__file__).resolve().parent / "official"
 
 
 def fetch(rel: str) -> bytes:
-    req = urllib.request.Request(BASE + rel, headers={"User-Agent": "mussa-oracle-fetch"})
+    req = urllib.request.Request(BASE + rel, headers={"User-Agent": "python-urllib"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         if resp.status != 200:
             raise RuntimeError(f"{rel}: HTTP {resp.status}")

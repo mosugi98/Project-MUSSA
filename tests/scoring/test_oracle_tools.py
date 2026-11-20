@@ -40,9 +40,12 @@ def test_driver_scores_occlusion_and_diffuse():
     assert res["per_lesion"] == [10] and res["diffuse"] == 2 and res["total"] == 12
 
 
-def test_driver_sandbox_exposes_no_filesystem_process_or_network():
+def test_real_sandbox_exposes_no_host_objects_filesystem_process_or_network():
+    """The self-test probes the same sandbox the official code runs in, including the classic
+    constructor-chain escapes through the stub functions and through parsed case objects."""
     out = subprocess.run(["node", str(DRIVER), "--selftest-sandbox"], capture_output=True, text=True,
                          timeout=60, cwd=ROOT)
     info = json.loads(out.stdout)
     assert info == {"require": "undefined", "process": "undefined", "fetch": "undefined",
-                    "XMLHttpRequest": "undefined"}
+                    "XMLHttpRequest": "undefined", "escape_via_stub": "undefined",
+                    "escape_via_case": "undefined", "official_loaded": "function"}

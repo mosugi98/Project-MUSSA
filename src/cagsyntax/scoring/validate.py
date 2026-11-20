@@ -6,6 +6,23 @@ from .tables import MEDINA, OSTIAL_SEGMENTS, SEGMENT_IDS, VISUALIZED_HELP, weigh
 MAX_LESIONS = 12  # the official calculator stops at 12
 AGE = {"no", "yes", "unknown"}
 SIDE = {"no", "small", "large", "both"}
+BOOL_FIELDS = ("occlusion", "blunt_stump", "bridging", "bifurcation_angle_lt70", "aorto_ostial",
+               "severe_tortuosity", "length_gt20", "heavy_calcification", "thrombus")
+STR_FIELDS = ("first_segment", "age_over_3_months", "beyond_first_visualized", "side_branch",
+              "bifurcation")
+
+
+def _bad_types(les: Lesion) -> list[str]:
+    """Names of fields holding the wrong type. A string such as "no" in a yes/no field must be
+    rejected, never read as true."""
+    bad = [f for f in BOOL_FIELDS if getattr(les, f) is not None and not isinstance(getattr(les, f), bool)]
+    bad += [f for f in STR_FIELDS if getattr(les, f) is not None and not isinstance(getattr(les, f), str)]
+    tri = les.trifurcation
+    if tri is not None and (isinstance(tri, bool) or not isinstance(tri, int)):
+        bad.append("trifurcation")
+    if not isinstance(les.segments, (list, tuple)) or not all(isinstance(x, str) for x in les.segments):
+        bad.append("segments")
+    return bad
 
 
 def beyond_candidates(main_segment: str, dominance: str) -> list[str]:
@@ -36,6 +53,9 @@ def tri_bif_asked(les: Lesion) -> bool | None:
 
 def _scoring_dominance(case: Case, errors: list[Issue], missing: list[Issue]) -> str | None:
     d, s = case.dominance, case.scoring_dominance
+    if (d is not None and not isinstance(d, str)) or (s is not None and not isinstance(s, str)):
+        errors.append(Issue("bad_type", "dominance and scoring_dominance must be text."))
+        return None
     if d is None:
         missing.append(Issue("no_dominance", "Choose the coronary dominance."))
         return None
@@ -92,8 +112,12 @@ def _validate_lesion(i: int, les: Lesion, dom: str | None, errors: list[Issue],
     def miss(code, msg):
         missing.append(Issue(code, msg, i))
 
-    if not isinstance(les.segments, (list, tuple)):
-        err("bad_input", "segments must be a list")
+    if not isinstance(les, Lesion):
+        err("bad_input", "A lesion must be a Lesion object.")
+        return
+    bad = _bad_types(les)
+    if bad:
+        err("bad_type", "Wrong type for: " + ", ".join(bad) + ".")
         return
     if not les.segments:
         miss("no_segments", "Select at least one diseased segment.")
@@ -131,16 +155,21 @@ def _validate_lesion(i: int, les: Lesion, dom: str | None, errors: list[Issue],
             miss("question_unanswered", "Answer: trifurcation?")
         elif tri not in (0, 1, 2, 3, 4):
             err("invalid_trifurcation", f"Trifurcation must be 0 to 4, got {tri!r}.")
-        if bif is None:
-            miss("question_unanswered", "Answer: bifurcation?")
-        elif bif != "none" and bif not in MEDINA:
-            err("invalid_bifurcation", f"Unknown bifurcation type {bif!r}.")
-        if isinstance(tri, int) and tri > 0 and bif not in (None, "none"):
-            err("trifurcation_and_bifurcation", "A lesion cannot have both a trifurcation and a bifurcation.")
-        if bif in MEDINA and les.bifurcation_angle_lt70 is None:
-            miss("question_unanswered", "Answer: bifurcation angle under 70 degrees?")
-        if les.bifurcation_angle_lt70 and bif in (None, "none"):
-            err("angle_without_bifurcation", "Bifurcation angle given without a bifurcation.")
+        if isinstance(tri, int) and tri > 0:
+            # A trifurcation answer of Yes skips question 6 on the official form.
+            if bif not in (None, "none"):
+                err("trifurcation_and_bifurcation", "A lesion cannot have both a trifurcation and a bifurcation.")
+            if les.bifurcation_angle_lt70:
+                err("angle_without_bifurcation", "Bifurcation angle given without a bifurcation.")
+        else:
+            if bif is None:
+                miss("question_unanswered", "Answer: bifurcation?")
+            elif bif != "none" and bif not in MEDINA:
+                err("invalid_bifurcation", f"Unknown bifurcation type {bif!r}.")
+            if bif in MEDINA and les.bifurcation_angle_lt70 is None:
+                miss("question_unanswered", "Answer: bifurcation angle under 70 degrees?")
+            if les.bifurcation_angle_lt70 and bif in (None, "none"):
+                err("angle_without_bifurcation", "Bifurcation angle given without a bifurcation.")
 
     if any(s in OSTIAL_SEGMENTS for s in segs):
         if les.aorto_ostial is None:
@@ -172,8 +201,13 @@ def validate(case: Case) -> tuple[list[Issue], list[Issue]]:
     if not isinstance(diffuse, (list, tuple)):
         errors.append(Issue("bad_input", "diffuse_segments must be a list"))
     else:
-        for s in diffuse:
-            if s not in SEGMENT_IDS or (dom and weight(s, dom) is None):
-                errors.append(Issue("diffuse_segment_not_applicable",
-                                    f"Diffuse disease segment {s!r} does not apply."))
+        if not all(isinstance(s, str) for s in diffuse):
+            errors.append(Issue("bad_type", "diffuse_segments must be a list of text."))
+        else:
+            for s in diffuse:
+                if s not in SEGMENT_IDS or (dom and weight(s, dom) is None):
+                    errors.append(Issue("diffuse_segment_not_applicable",
+                                        f"Diffuse disease segment {s!r} does not apply."))
+            if len(set(diffuse)) != len(diffuse):
+                errors.append(Issue("duplicate_diffuse_segment", "A diffuse disease segment is listed twice."))
     return errors, missing

@@ -1,9 +1,15 @@
 // Runs the official SYNTAX calculator's own JavaScript (tools/oracle/official/frameset.js) over
-// JSON cases and prints the official totals. The official code runs inside a node:vm context that
-// exposes no require, process, fetch or network: only inert stubs for the page objects it touches.
+// JSON cases and prints the official totals.
 //
 //   node driver.mjs < cases.json > results.json
-//   node driver.mjs --selftest-sandbox          (prints what the sandbox exposes)
+//   node driver.mjs --selftest-sandbox          (probes the real sandbox, prints what it exposes)
+//
+// Isolation: the official code runs in a fresh node:vm context. Nothing from the host realm is
+// passed in: the page stubs are defined by source text inside the context, and each case is
+// handed over as a JSON string and parsed inside it, so no host function or object is reachable
+// from the context (no constructor-chain route to the host `process`). The context has no
+// require, process, fetch or network. Deliberately malicious official code is out of scope: the
+// code is the public calculator, and node:vm is not a security boundary against hostile code.
 //
 // The official form is a UI: handlers are replayed in the order the real form calls them
 // (form.js / lesion_segments.htm), so the totals are what the calculator would show.
@@ -16,17 +22,23 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const officialJs = fs.readFileSync(path.join(here, "official", "frameset.js"), "latin1");
 const script = new vm.Script(officialJs, { filename: "frameset.js" });
 
+// Inert page stubs, created inside the context.
+const STUBS = `
+var window = this, parent = this, top = this, self = this;
+function alert() {}
+var document = {
+  getElementById: function () { return null; },
+  getElementsByName: function () { return []; },
+  write: function () {}
+};
+var frames = new Proxy({}, { get: function () {
+  return { window: { location: {} }, document: { getElementById: function () { return null; } } };
+} });
+`;
+
 function newSandbox() {
-  const box = {
-    alert() {},
-    document: { getElementById: () => null, write() {}, getElementsByName: () => [] },
-  };
-  box.window = box;
-  box.parent = box;
-  box.top = box;
-  box.self = box;
-  box.frames = new Proxy({}, { get: () => ({ window: { location: {} }, document: { getElementById: () => null } }) });
-  const ctx = vm.createContext(box);
+  const ctx = vm.createContext({});
+  vm.runInContext(STUBS, ctx);
   script.runInContext(ctx, { timeout: 5000 });
   // Neutralise the functions that only drive the page frames.
   vm.runInContext("setFrameUrl = function () {}; setHeaderText = function () {};", ctx);
@@ -34,11 +46,18 @@ function newSandbox() {
 }
 
 if (process.argv.includes("--selftest-sandbox")) {
-  const ctx = vm.createContext({});
-  const probe = (name) => vm.runInContext(`typeof ${name}`, ctx);
+  const ctx = newSandbox();                 // the same sandbox the official code runs in
+  const probe = (code) => vm.runInContext(code, ctx);
+  probe('var __caseJson = "{}";');
   process.stdout.write(JSON.stringify({
-    require: probe("require"), process: probe("process"), fetch: probe("fetch"),
-    XMLHttpRequest: probe("XMLHttpRequest"),
+    require: probe("typeof require"),
+    process: probe("typeof process"),
+    fetch: probe("typeof fetch"),
+    XMLHttpRequest: probe("typeof XMLHttpRequest"),
+    // classic escapes: reach the host realm through a stub function or a parsed object
+    escape_via_stub: probe('alert.constructor("return typeof process")()'),
+    escape_via_case: probe('JSON.parse(__caseJson).constructor.constructor("return typeof process")()'),
+    official_loaded: probe("typeof setDominance"),
   }));
   process.exit(0);
 }
@@ -100,14 +119,15 @@ function __run(c) {
 }
 `;
 
-const input = fs.readFileSync(0, "utf8");
-const cases = JSON.parse(input);
+const cases = JSON.parse(fs.readFileSync(0, "utf8"));
 const results = cases.map((c) => {
   try {
     const ctx = newSandbox();
     vm.runInContext(RUN, ctx);
-    ctx.__case = c;
-    return vm.runInContext("__run(__case)", ctx, { timeout: 5000 });
+    vm.runInContext("var __caseJson;", ctx);
+    ctx.__caseJson = JSON.stringify(c);       // a string: a primitive, not a host object
+    const out = vm.runInContext("JSON.stringify(__run(JSON.parse(__caseJson)))", ctx, { timeout: 5000 });
+    return JSON.parse(out);
   } catch (e) {
     return { error: String(e && e.message ? e.message : e) };
   }
