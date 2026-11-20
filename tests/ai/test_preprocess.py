@@ -59,3 +59,10 @@ def test_the_module_imports_only_numpy_and_pillow_so_the_kit_can_copy_it():
     assert "cagsyntax" not in src and "scoring" not in src
     imports = [line.split()[1].split(".")[0] for line in src.splitlines() if line.startswith(("import ", "from "))]
     assert set(imports) <= {"__future__", "numpy", "PIL"}
+
+
+def test_an_optional_size_gives_a_smaller_input_for_small_models():
+    out = preprocess(gradient(100, 80), size=128)
+    assert out.shape == (1, 128, 128) and out.dtype == np.float32
+    assert out.min() == pytest.approx(-1.0, abs=1e-5) and out.max() == pytest.approx(1.0, abs=1e-5)
+    assert preprocess(gradient()).shape == (1, 512, 512)                    # default unchanged

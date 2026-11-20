@@ -10,18 +10,18 @@ from PIL import Image
 INPUT_SIZE = 512
 
 
-def preprocess(frame: np.ndarray) -> np.ndarray:
-    """2-D uint8 or uint16 frame of any size -> float32 array of shape (1, 512, 512).
+def preprocess(frame: np.ndarray, size: int = INPUT_SIZE) -> np.ndarray:
+    """2-D uint8 or uint16 frame of any size -> float32 array of shape (1, size, size) (512 by default).
 
     Steps: scale to 0..1 by the frame's own minimum and maximum (a constant frame becomes 0.5),
-    resize bilinearly to 512 x 512, then standardise with mean 0.5 and std 0.5 (range -1..1)."""
+    resize bilinearly to size x size, then standardise with mean 0.5 and std 0.5 (range -1..1)."""
     data = np.asarray(frame)
     if data.ndim != 2:
         raise ValueError(f"Expected a 2-D grayscale frame, got shape {data.shape}.")
     data = data.astype(np.float32)
     low, high = float(data.min()), float(data.max())
     scaled = (data - low) / (high - low) if high > low else np.full_like(data, 0.5)
-    resized = Image.fromarray(scaled, mode="F").resize((INPUT_SIZE, INPUT_SIZE), Image.Resampling.BILINEAR)
+    resized = Image.fromarray(scaled, mode="F").resize((size, size), Image.Resampling.BILINEAR)
     out = (np.asarray(resized, dtype=np.float32) - 0.5) / 0.5
     return out[None, :, :]
 
