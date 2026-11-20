@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pydicom
 
 from .models import ImportRejected, SeriesHeader, XASeries
@@ -59,6 +60,10 @@ def read_xa(path: Path) -> XASeries:
         raise ImportRejected(f"{path.name}: cannot decode pixel data ({exc})") from exc
     if frames.ndim == 2:
         frames = frames[None, ...]
+    if str(ds.get("PhotometricInterpretation", "")) == "MONOCHROME1" and frames.dtype.kind == "u":
+        # MONOCHROME1 stores contrast inverted; show and analyse every series with standard polarity
+        top = (1 << int(ds.get("BitsStored", frames.dtype.itemsize * 8))) - 1
+        frames = (top - frames.astype(np.int64)).astype(frames.dtype)
     frame_time = _float_or_none(ds, "FrameTime")
     cine_rate = _float_or_none(ds, "CineRate")
     fps = 1000.0 / frame_time if frame_time and frame_time > 0 else (cine_rate if cine_rate and cine_rate > 0 else DEFAULT_FPS)

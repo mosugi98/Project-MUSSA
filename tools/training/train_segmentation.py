@@ -195,6 +195,7 @@ def train(args: argparse.Namespace) -> dict:
         test_dice, test_scores = evaluate(DataLoader(test_set, batch_size=args.batch_size, num_workers=workers))
         print(f"test mean dice {test_dice:.4f}", flush=True)
 
+    torch.save(best_state, out_dir / "segments_best.pt")      # kept even if the ONNX export below fails
     onnx_path = out_dir / "segments.onnx"
     export_onnx(model, args.size, onnx_path, torch)
     card = {

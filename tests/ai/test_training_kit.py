@@ -131,3 +131,24 @@ def test_the_training_dataset_can_be_pickled_for_dataloader_workers(tmp_path):
     assert len(clone) == 1 and clone.size == 32 and clone.augment is True
     data.epoch = 3
     assert pickle.loads(pickle.dumps(data)).epoch == 3
+
+
+def test_the_best_weights_are_saved_before_the_onnx_export_so_a_failed_export_loses_nothing():
+    src = (TOOLS / "train_segmentation.py").read_text(encoding="utf-8")
+    assert src.index("segments_best.pt") < src.index("export_onnx(model, args.size")
+    assert "torch.save" in src
+
+
+def test_notebook_installs_the_export_packages_and_checks_the_exported_model_before_download():
+    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    assert "onnxscript" in code and "onnxruntime" in code and "onnx " in code + " "
+    assert "(1, 25" in code and code.index("onnxruntime.InferenceSession") < code.index("files.download")
+
+
+def test_notebook_works_on_colab_and_kaggle():
+    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    for needle in ("/kaggle/working", "/kaggle/input", "ON_COLAB", "__MACOSX"):
+        assert needle in code, needle
+    assert "KIT" in code and "internet" in "".join("".join(c["source"]) for c in nb["cells"]).lower()

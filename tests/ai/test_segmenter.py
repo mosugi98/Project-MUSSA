@@ -136,3 +136,15 @@ def test_a_model_that_cannot_run_is_reported(tmp_path, monkeypatch):
     monkeypatch.setattr(ort.InferenceSession, "run", boom)
     with pytest.raises(ModelUnavailable, match="test run"):
         Segmenter.load(model)
+
+
+def test_very_negative_logits_do_not_raise_overflow_warnings(tmp_path, recwarn):
+    import warnings
+    model = make_toy_model(tmp_path / "segments.onnx", size=32, positive=(8,), logit=-300.0)
+    write_card(model, size=32)
+    seg = Segmenter.load(model)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        masks = seg.predict(frame())
+    assert not masks.any()
+    assert seg.predict(frame(), threshold=0.01).shape == (25, 100, 80)

@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self.segmenter_error = ""
         self._ai_on = False
         self._ai_cache: dict = {}
+        self._ai_drawn_key = None                 # (series uid, frame index) of the overlay on screen
         self._saved_json: str | None = None                    # form as last loaded or saved
         self._form_unreadable = False                          # the stored entry could not be read
         self._open_label = ""
@@ -803,6 +804,10 @@ class MainWindow(QMainWindow):
             self._ai_on = False
             self.ai_action.setChecked(False)
             return False
+        card = self.segmenter.card
+        dice = card.val_mean_dice
+        self._say(f"AI segments on - model: {card.trained_on}"
+                  + (f"; validation mean Dice {dice:.2f}" if dice is not None else ""))
         return True
 
     def _on_cine_frame_changed(self, _index: int) -> None:
@@ -822,7 +827,7 @@ class MainWindow(QMainWindow):
         if cached is None:
             self.statusBar().showMessage("Outlining segments (AI), please wait...")
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            QApplication.processEvents()
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)   # no re-entrant input
             try:
                 masks = self.segmenter.predict(frame)
                 cached = (render_overlay(masks), segment_labels(masks))
@@ -837,7 +842,13 @@ class MainWindow(QMainWindow):
             if len(self._ai_cache) >= 64:             # keep memory bounded
                 self._ai_cache.pop(next(iter(self._ai_cache)))
             self._ai_cache[key] = cached
+        # Draw only if the world is still as it was when the prediction started: the user may have
+        # moved to another frame or series, switched the overlay off or pressed play meanwhile.
+        playing = self.cine.player is not None and self.cine.player.playing
+        if not self._ai_on or playing or (self._shown_uid, self.cine.frame_index()) != key:
+            return True
         self.cine.set_overlay(*cached)
+        self._ai_drawn_key = key
         return True
 
     # ---- viewing ----

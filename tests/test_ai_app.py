@@ -135,3 +135,54 @@ def test_switching_series_while_on_refreshes_for_the_new_series(qapp, tmp_path):
     win.toggle_ai_segments(True)
     win.item_list.setCurrentRow(1)
     assert fake.calls == 2 and win.cine.overlay_visible()
+
+
+# ---- review fixes: re-entrancy, stale overlays, model info ----
+class HookSegmenter(FakeSegmenter):
+    """Runs a callable inside the first prediction, as queued user input would during processEvents."""
+
+    def __init__(self):
+        super().__init__()
+        self.hook = None
+
+    def predict(self, frame, threshold=0.5):
+        masks = super().predict(frame, threshold)
+        hook, self.hook = self.hook, None
+        if hook:
+            hook()
+        return masks
+
+
+def test_a_slow_prediction_never_draws_over_a_frame_the_user_moved_to(qapp, tmp_path):
+    seg = HookSegmenter()
+    win = window(tmp_path, seg)
+    seg.hook = lambda: win.cine.step_fwd_btn.click()           # the user steps on while frame 1 is being predicted
+    assert win.toggle_ai_segments(True) is True
+    assert win.cine.frame_index() == 1 and win.cine.overlay_visible()
+    assert win._ai_drawn_key == (win._shown_uid, 1) and seg.calls == 2
+
+
+def test_turning_the_overlay_off_during_a_prediction_leaves_it_off(qapp, tmp_path):
+    seg = HookSegmenter()
+    win = window(tmp_path, seg)
+    win.toggle_ai_segments(True)                                # first (cached) frame drawn normally
+    win.cine.step_fwd_btn.click()
+    seg.hook = lambda: win.toggle_ai_segments(False)
+    win.cine.step_fwd_btn.click()                               # new frame: the hook switches the overlay off mid-prediction
+    assert not win.cine.overlay_visible() and win.ai_action.isChecked() is False
+
+
+def test_pressing_play_during_a_prediction_leaves_no_overlay(qapp, tmp_path):
+    seg = HookSegmenter()
+    win = window(tmp_path, seg)
+    seg.hook = lambda: win.cine.play_btn.click()
+    win.toggle_ai_segments(True)
+    assert win.cine.player.playing and not win.cine.overlay_visible()
+    win.cine.play_btn.click()
+
+
+def test_turning_the_overlay_on_says_which_model_is_shown(qapp, tmp_path):
+    win = window(tmp_path, FakeSegmenter())
+    win.toggle_ai_segments(True)
+    msg = win.statusBar().currentMessage()
+    assert "fake" in msg and "0.5" in msg                       # the card's trained_on and validation Dice

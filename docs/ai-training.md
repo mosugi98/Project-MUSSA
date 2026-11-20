@@ -31,9 +31,13 @@ exactly as before and the **AI segments** button explains what is missing.
    app's loader, preprocessing and metrics). No patient data, no hospital files.
 2. Open `tools/training/MUSSA_ARCADE_segments.ipynb` on Google Colab (upload it at colab.research.google.com,
    then Runtime > Change runtime type > GPU) or on Kaggle (a notebook with the GPU accelerator).
+   On Kaggle, turn on the GPU accelerator and Internet in the notebook settings and add `mussa-training-kit.zip` as a
+   dataset (Add data > Upload); the notebook finds it under `/kaggle/input`. On Colab it asks you to upload the zip.
 3. Run all cells. The notebook installs `segmentation-models-pytorch`, downloads ARCADE from Zenodo and
    checks its md5, asks you to upload `mussa-training-kit.zip`, trains (30 epochs; try adding `--smoke` to the
    training command first for a one-minute pipeline check), and offers two files for download.
+   The notebook also checks the exported model by running it once before offering the download. The best weights are
+   saved as `segments_best.pt` before the ONNX export, so a failed export does not lose the training run.
 4. Copy both downloaded files, `segments.onnx` and `segments.card.json`, into
    `C:\Users\<you>\MUSSA-data\models\` (create the `models` folder if needed). Keep them side by side.
 5. Start MUSSA, open a cine, click **AI segments** in the toolbar.
@@ -51,6 +55,11 @@ goes to the cloud. Fine-tuning on your own confirmed cases is not part of this s
   result is cached per frame, so stepping back to a frame is instant.
 - It shows where the model thinks each segment is. It does not say which segments are diseased: that is the
   next AI helper (stenosis candidates), planned separately. You score exactly as before.
+- Domain gap: ARCADE is all 512 x 512 8-bit frames. A clinical frame that is not square is squashed to a square for the
+  model and stretched back, and frames with bright burned-in text or very different contrast can behave differently.
+  Series stored with inverted polarity (MONOCHROME1) are now flipped to standard polarity on import, in the viewer too.
+- When you turn the overlay on, the status bar names the model and its validation Dice from the model card (a model
+  trained with `--smoke` says so there).
 - Expect modest accuracy at first. Judge it by looking and by measuring (below), never by assuming.
 
 ## Measure the model

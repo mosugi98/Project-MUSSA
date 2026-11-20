@@ -94,3 +94,15 @@ def test_read_header_reports_kind_and_frame_count(tmp_path):
     still = read_header(make_xa(tmp_path / "s.dcm", sop_class=SC_SOP))
     assert (cine.kind, cine.frame_count) == ("cine", 7)
     assert (still.kind, still.frame_count) == ("still", 1)
+
+
+def test_monochrome1_series_are_inverted_to_standard_polarity(tmp_path):
+    import numpy as np
+    p = make_xa(tmp_path / "m1.dcm")
+    raw = read_xa(p).frames.copy()
+    ds = pydicom.dcmread(p)
+    ds.PhotometricInterpretation = "MONOCHROME1"
+    ds.save_as(p)
+    inverted = read_xa(p).frames
+    assert inverted.dtype == raw.dtype and np.array_equal(inverted, 255 - raw)
+    assert read_xa(make_xa(tmp_path / "m2.dcm")).frames.min() == raw.min()      # MONOCHROME2 untouched

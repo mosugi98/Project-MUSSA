@@ -83,6 +83,6 @@ class Segmenter:
         height, width = np.asarray(frame).shape
         x = preprocess(frame, self.card.input_size)[None].astype(np.float32)
         logits = self._session.run(None, {self._input_name: x})[0][0]
-        probs = 1.0 / (1.0 + np.exp(-logits))
-        masks = probs > threshold
+        t = min(max(float(threshold), 1e-6), 1.0 - 1e-6)
+        masks = logits > np.log(t / (1.0 - t))       # sigmoid(logit) > t, without exp overflow
         return np.stack([resize_mask(masks[c], height, width) for c in range(masks.shape[0])])
