@@ -80,6 +80,19 @@ class CineWidget(QWidget):
         self._apply_zoom()
         self._show_frame()
 
+    def clear(self) -> None:
+        """Forget the current series (e.g. after it was deleted)."""
+        self._timer.stop()
+        self.player = None
+        self._images = []
+        self._item.setPixmap(QPixmap())
+        self.play_btn.setText("Play")
+        self.view_label.setText("No series loaded")
+        self.frame_label.setText("frame 0 / 0")
+        self.slider.blockSignals(True)
+        self.slider.setRange(0, 0)
+        self.slider.blockSignals(False)
+
     def zoom_by(self, factor: float) -> None:
         self.zoom = min(MAX_ZOOM, max(MIN_ZOOM, self.zoom * factor))
         self._apply_zoom()

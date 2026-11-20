@@ -120,3 +120,111 @@ def test_selecting_a_series_shows_loading_message_while_decoding(qapp, tmp_path,
     assert seen and "Loading" in seen[0]
     assert win.statusBar().currentMessage() == ""
     assert win.cine.frame_label.text() == "frame 1 / 5"
+
+
+def _two_folders(tmp_path):
+    a = tmp_path / "in_a"
+    b = tmp_path / "in_b"
+    a.mkdir()
+    b.mkdir()
+    make_xa(a / "a1.dcm")
+    make_xa(a / "a2.dcm", primary=-20.0)
+    make_xa(b / "b1.dcm", primary=10.0)
+    win = MainWindow(tmp_path / "data")
+    win.import_from(a, "Case 01")
+    win.import_from(b, "Case 02")
+    return win, a, b
+
+
+def _rows(win):
+    return [win.item_list.item(i).text() for i in range(win.item_list.count())]
+
+
+def test_rows_show_folder_name_and_combo_lists_folders(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    assert sum("[Case 01]" in t for t in _rows(win)) == 2
+    assert sum("[Case 02]" in t for t in _rows(win)) == 1
+    combo = [win.folder_combo.itemText(i) for i in range(win.folder_combo.count())]
+    assert combo == ["All folders", "Case 01", "Case 02"]
+
+
+def test_folder_combo_filters_the_list(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    win.folder_combo.setCurrentText("Case 02")
+    assert len(_rows(win)) == 1 and "[Case 02]" in _rows(win)[0]
+    win.folder_combo.setCurrentText("All folders")
+    assert len(_rows(win)) == 3
+
+
+def test_folder_names_survive_restart(qapp, tmp_path):
+    _two_folders(tmp_path)
+    reopened = MainWindow(tmp_path / "data")
+    assert sum("[Case 01]" in t for t in _rows(reopened)) == 2
+
+
+def test_reimport_keeps_the_original_folder_name(qapp, tmp_path):
+    win, a, _ = _two_folders(tmp_path)
+    r = win.import_from(a, "Other name")
+    assert len(r.skipped_duplicates) == 2
+    assert sum("[Case 01]" in t for t in _rows(win)) == 2
+    assert not any("[Other name]" in t for t in _rows(win))
+
+
+def test_delete_selected_series_after_confirm(qapp, tmp_path):
+    win, a, _ = _two_folders(tmp_path)
+    win._confirm = lambda text: True
+    win.item_list.setCurrentRow(0)
+    shown = win.cine.frame_label.text()
+    assert shown.startswith("frame 1")
+    assert win.delete_selected_series() is True
+    assert len(_rows(win)) == 2
+    assert len(list((tmp_path / "data" / "store").glob("*.dcm"))) == 2
+    assert win.cine.frame_label.text() == "frame 0 / 0"
+    assert (a / "a1.dcm").exists() and (a / "a2.dcm").exists()  # originals untouched
+
+
+def test_delete_series_declined_changes_nothing(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    win._confirm = lambda text: False
+    win.item_list.setCurrentRow(0)
+    assert win.delete_selected_series() is False
+    assert len(_rows(win)) == 3
+
+
+def test_delete_folder_removes_only_that_folder(qapp, tmp_path):
+    win, a, b = _two_folders(tmp_path)
+    win._confirm = lambda text: True
+    assert win.delete_folder("Case 01") == 2
+    assert len(_rows(win)) == 1 and "[Case 02]" in _rows(win)[0]
+    assert [win.folder_combo.itemText(i) for i in range(win.folder_combo.count())] == ["All folders", "Case 02"]
+    assert (a / "a1.dcm").exists() and (b / "b1.dcm").exists()
+
+
+def test_delete_folder_defaults_to_the_selected_rows_folder(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    win._confirm = lambda text: True
+    win.item_list.setCurrentRow(len(_rows(win)) - 1)  # last row is in Case 02
+    assert win.delete_folder() == 1
+
+
+def test_delete_folder_confirmation_names_folder_and_count(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    asked = []
+    win._confirm = lambda text: asked.append(text) or False
+    win.delete_folder("Case 01")
+    assert "Case 01" in asked[0] and "2" in asked[0] and "original" in asked[0].lower()
+    assert len(_rows(win)) == 3
+
+
+def test_rename_folder_updates_rows_and_combo(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    assert win.rename_folder("Case 01", "Patient A") == 2
+    assert sum("[Patient A]" in t for t in _rows(win)) == 2
+    assert [win.folder_combo.itemText(i) for i in range(win.folder_combo.count())] == \
+        ["All folders", "Case 02", "Patient A"]
+
+
+def test_rename_folder_blank_name_is_ignored(qapp, tmp_path):
+    win, _, _ = _two_folders(tmp_path)
+    assert win.rename_folder("Case 01", "   ") == 0
+    assert sum("[Case 01]" in t for t in _rows(win)) == 2
