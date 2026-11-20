@@ -101,6 +101,15 @@ reference, the case is still exported as confirmed and flagged in the README. Th
 
 Keep exports on the same protected computer; they are research data.
 
+## 7. AI segments (suggestion overlay)
+
+If a trained model is installed (see `docs/ai-training.md`), click **AI segments** in the toolbar while a series
+is open. The coronary segments are outlined in colour on the shown frame, with their numbers, under the label
+"AI suggestion - not a diagnosis". It appears on paused frames only and takes about half a second per frame.
+
+It does not change any score or form, and it does not say which segments are diseased: you still score
+exactly as before. Without a model, the button explains what is missing and nothing else changes.
+
 ## Where your data is
 
 `C:\Users\<you>\MUSSA-data` holds the de-identified images (`store`), folder names, the case store

@@ -101,6 +101,8 @@ Training:
 - Start from a model trained on public coronary angiography data. Check dataset licensing and fit before use.
 - Fine-tune on the confirmed cases (target 100 to 500). This size supports fine-tuning and testing, not training from scratch. Expect modest accuracy at first.
 
+Segment helper (decided, step 5a): the first helper is segment outlining, trained on ARCADE `syntax` (public, CC0; train 1000 / val 200 / test 300). It is a multi-label U-Net with a ResNet-34 encoder, 25 sigmoid outputs (one per SYNTAX segment, segments may overlap) at 512 x 512, trained in a cloud notebook on public data only, exported to ONNX with a model card, and run offline on the PC. One shared preprocessing function is the single source for training, evaluation and the app. The app shows the result as a coloured overlay on the displayed paused frame, always labelled "AI suggestion - not a diagnosis", never changes scores or forms, and refuses a model that does not produce 25 channels at the card size. Measured accuracy comes from `tools/ai/evaluate_segmentation.py` on the ARCADE test split (pooled per-segment Dice and IoU). ARCADE limits: single frames, no cines or angles, different images for its two tasks, undocumented annotation process and no ethics statement. The stenosis helper and form pre-filling with accept/edit logging follow in a separate step. See `docs/ai-training.md`.
+
 Evaluation:
 
 - Hold out test cases, with all images of one patient kept in the same split.
