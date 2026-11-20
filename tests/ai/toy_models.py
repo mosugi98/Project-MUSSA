@@ -10,7 +10,7 @@ from cagsyntax.ai.segment_names import SEGMENT_NAMES
 
 
 def make_toy_model(path: Path, size: int = 32, positive: tuple[int, ...] = (8, 9), logit: float = 5.0,
-                   channels: int = 25, in_channels: int = 1) -> Path:
+                   channels: int = 25, in_channels: int = 1, symbolic_output: bool = False) -> Path:
     """Model with input `image` [N, in_channels, size, size] and output `masks` [N, channels, size, size]
     holding constant logits: +logit for the `positive` channels, -5 for the others."""
     weights = numpy_helper.from_array(np.zeros((1, channels, 1, 1), dtype=np.float32), "zero")
@@ -26,7 +26,8 @@ def make_toy_model(path: Path, size: int = 32, positive: tuple[int, ...] = (8, 9
     graph = helper.make_graph(
         nodes, "toy",
         [helper.make_tensor_value_info("image", TensorProto.FLOAT, ["N", in_channels, size, size])],
-        [helper.make_tensor_value_info("masks", TensorProto.FLOAT, ["N", channels, size, size])],
+        [helper.make_tensor_value_info("masks", TensorProto.FLOAT,
+                                       ["N", channels, "H", "W"] if symbolic_output else ["N", channels, size, size])],
         initializer=[weights, numpy_helper.from_array(bias, "bias")])
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
     model.ir_version = 8

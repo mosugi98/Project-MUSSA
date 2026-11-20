@@ -92,3 +92,47 @@ def test_a_card_size_that_does_not_match_the_model_is_rejected(tmp_path):
     write_card(model, size=64)
     with pytest.raises(ModelUnavailable, match="size"):
         Segmenter.load(model)
+
+
+class _Out:
+    """Stand-in for onnxruntime's output description."""
+
+    def __init__(self, name, shape):
+        self.name, self.shape = name, shape
+
+
+def pretend_exporter_metadata(monkeypatch, channels_claimed=25):
+    """What the real PyTorch exporter writes: only the batch axis is known, so the output height and
+    width appear as symbolic names (seen in the smoke test: ['batch', 25, 'batch', 'Convmasks_dim_3'])."""
+    import onnxruntime as ort
+    monkeypatch.setattr(ort.InferenceSession, "get_outputs",
+                        lambda self: [_Out("masks", ["batch", channels_claimed, "batch", "Convmasks_dim_3"])])
+
+
+def test_a_model_whose_metadata_leaves_the_output_size_symbolic_still_loads(tmp_path, monkeypatch):
+    model = make_toy_model(tmp_path / "segments.onnx", size=32, positive=(8,))
+    write_card(model, size=32)
+    pretend_exporter_metadata(monkeypatch)
+    seg = Segmenter.load(model)
+    assert seg.predict(frame(60, 60))[8].all()
+
+
+def test_metadata_claiming_25_channels_cannot_hide_a_24_channel_model(tmp_path, monkeypatch):
+    model = make_toy_model(tmp_path / "segments.onnx", size=32, channels=24, positive=(3,))
+    write_card(model, size=32)
+    pretend_exporter_metadata(monkeypatch)                       # metadata lies; the real output has 24 channels
+    with pytest.raises(ModelUnavailable, match="25"):
+        Segmenter.load(model)
+
+
+def test_a_model_that_cannot_run_is_reported(tmp_path, monkeypatch):
+    model = make_toy_model(tmp_path / "segments.onnx", size=32)
+    write_card(model, size=32)
+    import onnxruntime as ort
+
+    def boom(self, *a, **k):
+        raise RuntimeError("kernel missing")
+
+    monkeypatch.setattr(ort.InferenceSession, "run", boom)
+    with pytest.raises(ModelUnavailable, match="test run"):
+        Segmenter.load(model)

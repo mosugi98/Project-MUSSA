@@ -62,15 +62,20 @@ class Segmenter:
         except Exception as exc:                      # onnxruntime raises several error types
             raise ModelUnavailable(f"{model_path.name} is not a valid ONNX model ({exc}).") from exc
         size, classes = card.input_size, len(SEGMENT_NAMES)
-        inp, out = session.get_inputs()[0].shape, session.get_outputs()[0].shape
-        if list(inp[1:]) != [1, size, size]:
-            raise ModelUnavailable(f"The model's input shape {inp} is not [N, 1, {size}, {size}] "
-                                   "(wrong input shape or a card size that does not match the model).")
-        if len(out) != 4 or out[1] != classes:
-            raise ModelUnavailable(f"The model has {out[1] if len(out) > 1 else '?'} output channels; "
-                                   f"{classes} (one per SYNTAX segment) are required.")
-        if list(out[2:]) != [size, size]:
-            raise ModelUnavailable(f"The model's output size {out[2:]} does not match the card size {size}.")
+        inp = session.get_inputs()[0]
+        if list(inp.shape[1:]) != [1, size, size]:
+            raise ModelUnavailable(f"The model's input shape {inp.shape} is not [N, 1, {size}, {size}] "
+                                   "(wrong input shape, or a card size that does not match the model).")
+        # The exporter only records the batch axis, so the output size is not reliable metadata:
+        # check the real output by running the model once on a blank frame.
+        try:
+            result = session.run(None, {inp.name: np.zeros((1, 1, size, size), dtype=np.float32)})[0]
+        except Exception as exc:
+            raise ModelUnavailable(f"{model_path.name} failed a test run ({exc}).") from exc
+        if tuple(result.shape) != (1, classes, size, size):
+            raise ModelUnavailable(f"The model produces output of shape {tuple(result.shape)}; "
+                                   f"(1, {classes}, {size}, {size}) is required: {classes} channels, one per "
+                                   "SYNTAX segment, at the card size.")
         return cls(session, card)
 
     def predict(self, frame: np.ndarray, threshold: float = 0.5) -> np.ndarray:
