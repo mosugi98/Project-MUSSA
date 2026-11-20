@@ -211,3 +211,21 @@ def test_scoring_status_counts_complete_drafts_and_confirmation_per_case(store):
     store.confirm(UID, e.id, card.id)
     assert store.scoring_status()[UID] == (1, 1, True)
     assert store.scoring_status()["2.25.200"] == (0, 0, False)
+
+
+def test_confirmed_cases_lists_only_confirmed_ones_with_their_patient_key(store):
+    card = store.add_user("Card", "cardiologist")
+    store.ensure_case("2.25.300", "hashC")
+    store.ensure_case("2.25.200", "hashB")
+    f, r = complete("7")
+    for uid in ("2.25.300", "2.25.200"):
+        store.confirm(uid, store.save_entry(uid, card.id, f, r).id, card.id)
+    store.save_entry(UID, card.id, f, r)                   # UID itself stays unconfirmed
+    cases = store.confirmed_cases()
+    assert [c.study_uid for c in cases] == ["2.25.200", "2.25.300"]
+    assert [c.mrn_hash for c in cases] == ["hashB", "hashC"]
+    assert cases[0].confirmation.total == 5.0 and cases[0].confirmation.confirmed_by.name == "Card"
+
+
+def test_confirmed_cases_is_empty_for_an_empty_store(store):
+    assert store.confirmed_cases() == []

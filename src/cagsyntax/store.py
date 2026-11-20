@@ -48,6 +48,13 @@ class Confirmation:
     group: str | None
 
 
+@dataclass
+class ConfirmedCase:
+    study_uid: str
+    mrn_hash: str
+    confirmation: Confirmation
+
+
 _SCHEMA = """
 CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE,
                    level TEXT NOT NULL);
@@ -212,6 +219,14 @@ class CaseStore:
             return None
         return Confirmation(row[0], User(row[1], row[2], row[3]), row[4], json.loads(row[5]), row[6],
                             row[7], row[8])
+
+    @_guarded
+    def confirmed_cases(self) -> list[ConfirmedCase]:
+        """Every case that has a confirmed reference, ordered by study uid."""
+        rows = self._con.execute(
+            "SELECT c.study_uid, c.mrn_hash FROM cases c JOIN confirmations f ON f.study_uid = c.study_uid "
+            "ORDER BY c.study_uid").fetchall()
+        return [ConfirmedCase(uid, mrn_hash, self.confirmation(uid)) for uid, mrn_hash in rows]
 
     @_guarded
     def case_summaries(self) -> list[tuple[str, int, bool]]:
