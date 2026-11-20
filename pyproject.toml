@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "cagsyntax"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["pydicom>=2.4", "numpy", "PySide6", "pylibjpeg", "pylibjpeg-libjpeg"]
+dependencies = ["pydicom>=2.4", "numpy", "PySide6", "pylibjpeg", "pylibjpeg-libjpeg", "pillow", "onnxruntime"]
+
+[project.optional-dependencies]
+test = ["pytest", "onnx"]   # onnx builds the tiny models used by the AI tests
 
 [tool.setuptools.packages.find]
 where = ["src"]
