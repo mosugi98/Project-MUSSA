@@ -35,11 +35,25 @@ def kind_text(kind: str, frame_count: int) -> str:
     return f"CINE {frame_count} frames" if kind == "cine" else "STILL"
 
 
+def score_flag(status: tuple[int, int, bool] | None) -> str:
+    """Flag for a series whose study has saved scores: (complete entries, drafts, has reference)."""
+    if status is None:
+        return ""
+    complete, drafts, confirmed = status
+    if confirmed:
+        return "[scored - reference]"
+    if complete:
+        return "[scored - not confirmed]"
+    if drafts:
+        return "[draft only]"
+    return ""
+
+
 def row_text(view: str, description: str, study_date: str, burned_in_unclear: bool,
              folder: str = DEFAULT_LABEL, kind: str = "cine", frame_count: int = 1,
-             scored: bool = False) -> str:
+             flag: str = "") -> str:
     return (f"[{folder}] {kind_text(kind, frame_count)} | {view} | {description} | {study_date}"
-            f"{BURNED_IN_FLAG if burned_in_unclear else ''}{' | [scored]' if scored else ''}")
+            f"{BURNED_IN_FLAG if burned_in_unclear else ''}{' | ' + flag if flag else ''}")
 
 
 def format_summary(result: ImportResult) -> str:
@@ -374,6 +388,7 @@ class MainWindow(QMainWindow):
             return None
         self._form_unreadable = False
         self._saved_json = case_to_json(self.panel.case())
+        self.refresh_list()                                    # the series of this study get their flag
         if result.status == "complete":
             self._say(f"Saved: total {result.total:g} ({result.group} risk group).")
         else:
@@ -472,10 +487,10 @@ class MainWindow(QMainWindow):
                 continue
         # Cine series are the primary data, so they come before stills within each folder.
         rows.sort(key=lambda r: (r[0].label.lower(), r[1].kind != "cine", r[0].path.name))
-        scored: set[str] = set()
+        status: dict[str, tuple[int, int, bool]] = {}
         if self.store is not None:
             try:
-                scored = {uid for uid, _n, confirmed in self.store.case_summaries() if confirmed}
+                status = self.store.scoring_status()
             except StoreError as exc:
                 self._say(str(exc))
         self.item_list.blockSignals(True)
@@ -483,7 +498,7 @@ class MainWindow(QMainWindow):
         for e, h in rows:
             row = QListWidgetItem(row_text(h.view_label, h.series_description, h.study_date,
                                            h.burned_in_unclear, e.label, h.kind, h.frame_count,
-                                           h.study_uid in scored))
+                                           score_flag(status.get(h.study_uid))))
             row.setData(PATH_ROLE, str(e.path))
             row.setData(LABEL_ROLE, e.label)
             self.item_list.addItem(row)

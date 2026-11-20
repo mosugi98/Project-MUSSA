@@ -194,3 +194,20 @@ def test_a_complete_result_without_a_total_is_rejected(store):
                      scoring_dominance="right", lesions=[])
     with pytest.raises(ValueError):
         store.save_entry(UID, u.id, {}, bad)
+
+
+def test_scoring_status_counts_complete_drafts_and_confirmation_per_case(store):
+    res = store.add_user("Res", "resident")
+    card = store.add_user("Card", "cardiologist")
+    store.ensure_case("2.25.200", "h")
+    store.ensure_case("2.25.300", "h")
+    assert store.scoring_status()[UID] == (0, 0, False)
+    f_inc, r_inc = form_and_result()
+    f, r = complete()
+    store.save_entry(UID, res.id, f_inc, r_inc)
+    assert store.scoring_status()[UID] == (0, 1, False)
+    e = store.save_entry(UID, card.id, f, r)
+    assert store.scoring_status()[UID] == (1, 1, False)
+    store.confirm(UID, e.id, card.id)
+    assert store.scoring_status()[UID] == (1, 1, True)
+    assert store.scoring_status()["2.25.200"] == (0, 0, False)

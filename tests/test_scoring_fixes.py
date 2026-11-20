@@ -264,3 +264,77 @@ def test_unreadable_stored_series_gives_a_message_not_an_exception(qapp, tmp_pat
     Path(path).write_bytes(b"junk" * 50)
     assert win.score_selected_case() is False
     assert "cannot be read" in win.statusBar().currentMessage().lower()
+
+
+# ---- flags on already scored series ----
+def rows_of(win):
+    return [win.item_list.item(i).text() for i in range(win.item_list.count())]
+
+
+def study_rows(win, study_uid):
+    from pathlib import Path
+    from cagsyntax.cases import study_of
+    return [win.item_list.item(i).text() for i in range(win.item_list.count())
+            if study_of(Path(win.item_list.item(i).data(0x100)))[0] == study_uid]
+
+
+def test_unscored_series_have_no_score_flag(qapp, tmp_path):
+    win = open_window(tmp_path, make_source(tmp_path))
+    assert not any("scored" in t or "draft only" in t for t in rows_of(win))
+
+
+def test_a_draft_only_study_is_flagged_draft_only_on_all_its_series(qapp, tmp_path):
+    win, _ = open_case(tmp_path)
+    win.panel.set_dominance("right")
+    win.panel.toggle_segment("8")                             # incomplete
+    win.save_entry()
+    assert all("[draft only]" in t for t in rows_of(win))
+    assert not any("scored" in t for t in rows_of(win))
+
+
+def test_a_complete_unconfirmed_score_is_flagged_not_confirmed(qapp, tmp_path):
+    win, _ = open_case(tmp_path)
+    fill_lad(win)
+    win.save_entry()
+    assert all("[scored - not confirmed]" in t for t in rows_of(win))
+    assert not any("draft only" in t for t in rows_of(win))
+
+
+def test_a_confirmed_study_is_flagged_as_reference(qapp, tmp_path):
+    win, _ = open_case(tmp_path, level="cardiologist")
+    fill_lad(win)
+    win.confirm_entry(win.save_entry().id)
+    assert all("[scored - reference]" in t for t in rows_of(win))
+
+
+def test_only_the_scored_study_is_flagged(qapp, tmp_path):
+    win, _ = open_case(tmp_path, src=make_two_studies(tmp_path))
+    study_x = uid_of(win)
+    fill_lad(win)
+    win.save_entry()
+    assert all("[scored - not confirmed]" in t for t in study_rows(win, study_x))
+    other = [t for i, t in enumerate(rows_of(win)) if t not in study_rows(win, study_x)]
+    assert other and not any("scored" in t or "draft only" in t for t in other)
+
+
+def test_the_flag_survives_a_restart(qapp, tmp_path):
+    win, _ = open_case(tmp_path)
+    fill_lad(win)
+    win.save_entry()
+    win.store.close()
+    again = open_window(tmp_path)
+    assert all("[scored - not confirmed]" in t for t in rows_of(again))
+
+
+def test_the_flag_updates_when_a_draft_becomes_complete(qapp, tmp_path):
+    win, _ = open_case(tmp_path)
+    win.panel.set_dominance("right")
+    win.panel.toggle_segment("6")
+    win.save_entry()
+    assert all("[draft only]" in t for t in rows_of(win))
+    for field, value in [("occlusion", False), ("trifurcation", 0), ("bifurcation", "none"),
+                         ("aorto_ostial", False), ("severe_tortuosity", False), ("length_gt20", False),
+                         ("heavy_calcification", False), ("thrombus", False)]:
+        assert win.panel.answer(field, value), field          # finish the same lesion
+    win.save_entry()
+    assert all("[scored - not confirmed]" in t for t in rows_of(win))

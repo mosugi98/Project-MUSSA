@@ -223,6 +223,16 @@ class CaseStore:
 
     # ---- small settings ----
     @_guarded
+    def scoring_status(self) -> dict[str, tuple[int, int, bool]]:
+        """Per case: (complete entries, draft entries, has a confirmed reference)."""
+        rows = self._con.execute(
+            "SELECT c.study_uid, COALESCE(SUM(e.status = 'complete'), 0), "
+            "COALESCE(SUM(e.status != 'complete'), 0), "
+            "EXISTS(SELECT 1 FROM confirmations f WHERE f.study_uid = c.study_uid) "
+            "FROM cases c LEFT JOIN entries e ON e.study_uid = c.study_uid GROUP BY c.study_uid").fetchall()
+        return {r[0]: (int(r[1]), int(r[2]), bool(r[3])) for r in rows}
+
+    @_guarded
     def get_meta(self, key: str) -> str | None:
         row = self._con.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         return row[0] if row else None
