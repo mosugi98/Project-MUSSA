@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QGraphicsPixmapItem, QGraphicsScene, QGraphicsView, QHBoxLayout,
-                               QLabel, QPushButton, QSlider, QVBoxLayout, QWidget)
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPen, QPixmap
+from PySide6.QtWidgets import (QGraphicsPixmapItem, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView,
+                               QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from ..dicom_import.models import XASeries
 from .player import CinePlayer
 
 MIN_ZOOM, MAX_ZOOM = 0.25, 8.0
+AI_CAPTION = "AI suggestion - not a diagnosis"   # always drawn with an AI overlay
 
 
 def to_qimages(frames: np.ndarray) -> list[QImage]:
@@ -36,9 +37,14 @@ class _View(QGraphicsView):
 
 
 class CineWidget(QWidget):
+    frame_changed = Signal(int)          # emitted whenever the shown frame changes (and on pause)
+
     def __init__(self):
         super().__init__()
         self.player: CinePlayer | None = None
+        self._frames: np.ndarray | None = None       # original pixel data of the series
+        self._overlay_items: list = []
+        self._caption_text = ""
         self.zoom = 1.0
         self._images: list[QImage] = []
         self._scene = QGraphicsScene()
@@ -70,6 +76,7 @@ class CineWidget(QWidget):
     def set_series(self, series: XASeries, view_label: str) -> None:
         self._timer.stop()
         self._images = to_qimages(series.frames)
+        self._frames = series.frames
         self.player = CinePlayer(len(self._images), series.fps)
         self.play_btn.setText("Play")
         self.view_label.setText(view_label)
@@ -83,8 +90,10 @@ class CineWidget(QWidget):
     def clear(self) -> None:
         """Forget the current series (e.g. after it was deleted)."""
         self._timer.stop()
+        self.clear_overlay()
         self.player = None
         self._images = []
+        self._frames = None
         self._item.setPixmap(QPixmap())
         self.play_btn.setText("Play")
         self.view_label.setText("No series loaded")
@@ -103,12 +112,14 @@ class CineWidget(QWidget):
 
     def _show_frame(self) -> None:
         p = self.player
+        self.clear_overlay()                 # an overlay belongs to one frame
         self._item.setPixmap(QPixmap.fromImage(self._images[p.index]))
         self._scene.setSceneRect(self._item.boundingRect())
         self.frame_label.setText(f"frame {p.index + 1} / {len(self._images)}")
         self.slider.blockSignals(True)
         self.slider.setValue(p.index)
         self.slider.blockSignals(False)
+        self.frame_changed.emit(p.index)
 
     def _step(self, delta: int) -> None:
         if self.player:
@@ -126,10 +137,73 @@ class CineWidget(QWidget):
         self.player.toggle()
         self.play_btn.setText("Pause" if self.player.playing else "Play")
         if self.player.playing:
+            self.clear_overlay()             # no overlay while the cine plays
             self._timer.start(self.player.interval_ms)
         else:
             self._timer.stop()
+            self.frame_changed.emit(self.player.index)    # paused: the window may refresh the overlay
 
     def _on_tick(self) -> None:
         self.player.tick()
         self._show_frame()
+
+    # ---- original frame data and the AI overlay ----
+    def current_frame(self) -> np.ndarray | None:
+        """The original (not window-levelled) pixel data of the shown frame."""
+        if self._frames is None or self.player is None:
+            return None
+        return self._frames[self.player.index]
+
+    def frame_index(self) -> int:
+        return self.player.index if self.player else -1
+
+    def set_overlay(self, rgba: np.ndarray | None, labels: list | None = None, caption: str = "") -> None:
+        """Draw an RGBA overlay (same size as the frame) with segment labels. The caption
+        "AI suggestion - not a diagnosis" is always drawn with it; a caller cannot replace it."""
+        self.clear_overlay()
+        if rgba is None:
+            return
+        height, width = rgba.shape[:2]
+        data = np.ascontiguousarray(rgba)
+        image = QImage(data.data, width, height, 4 * width, QImage.Format.Format_RGBA8888).copy()
+        overlay = QGraphicsPixmapItem(QPixmap.fromImage(image))
+        overlay.setZValue(1)
+        self._scene.addItem(overlay)
+        self._overlay_items.append(overlay)
+        font = QFont()
+        font.setBold(True)
+        font.setPixelSize(max(10, height // 40))
+        for name, x, y in labels or []:
+            text = QGraphicsSimpleTextItem(name)
+            text.setFont(font)
+            text.setBrush(QColor("white"))
+            text.setPen(QPen(QColor("black"), 1))
+            rect = text.boundingRect()
+            text.setPos(x - rect.width() / 2, y - rect.height() / 2)
+            text.setZValue(2)
+            self._scene.addItem(text)
+            self._overlay_items.append(text)
+        banner = QGraphicsSimpleTextItem(AI_CAPTION)
+        banner_font = QFont()
+        banner_font.setBold(True)
+        banner_font.setPixelSize(max(12, height // 32))
+        banner.setFont(banner_font)
+        banner.setBrush(QColor("#ffd54f"))
+        banner.setPen(QPen(QColor("black"), 1))
+        banner.setPos(6, 4)
+        banner.setZValue(3)
+        self._scene.addItem(banner)
+        self._overlay_items.append(banner)
+        self._caption_text = AI_CAPTION
+
+    def clear_overlay(self) -> None:
+        for item in self._overlay_items:
+            self._scene.removeItem(item)
+        self._overlay_items = []
+        self._caption_text = ""
+
+    def overlay_visible(self) -> bool:
+        return bool(self._overlay_items)
+
+    def overlay_caption(self) -> str:
+        return self._caption_text

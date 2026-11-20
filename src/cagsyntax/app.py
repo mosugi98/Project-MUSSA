@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog
                                QMessageBox, QProgressDialog, QPushButton, QSplitter, QVBoxLayout,
                                QWidget)
 
+from .ai.overlay import render_overlay, segment_labels
+from .ai.segmenter import ModelUnavailable, Segmenter
 from .cases import study_of
 from .dicom_import.deidentify import get_or_create_salt
 from .dicom_import.importer import import_path
@@ -116,7 +118,7 @@ def format_summary(result: ImportResult) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, segmenter: Segmenter | None = None):
         super().__init__()
         self.setWindowTitle("MUSSA - XA viewer")
         self.data_dir = Path(data_dir)
@@ -126,6 +128,10 @@ class MainWindow(QMainWindow):
         self.salt = get_or_create_salt(self.data_dir)
         self._shown_uid: str | None = None
         self._scoring_study: tuple[str, str] | None = None     # (study uid, MRN hash) of the open case
+        self.segmenter = segmenter                              # AI segment model, if installed
+        self.segmenter_error = ""
+        self._ai_on = False
+        self._ai_cache: dict = {}
         self._saved_json: str | None = None                    # form as last loaded or saved
         self._form_unreadable = False                          # the stored entry could not be read
         self._open_label = ""
@@ -136,6 +142,8 @@ class MainWindow(QMainWindow):
             self.store = CaseStore(self.data_dir / "cases.sqlite")
         except StoreError as exc:
             self.store_error = str(exc)                        # viewer still works; scoring is off
+        if self.segmenter is None:
+            self._load_segmenter()
         self.folder_combo = QComboBox()
         self.item_list = QListWidget()
         self.item_list.setIconSize(QSize(14, 14))
@@ -145,6 +153,7 @@ class MainWindow(QMainWindow):
         box.addWidget(self.folder_combo)
         box.addWidget(self.item_list, 1)
         self.cine = CineWidget()
+        self.cine.frame_changed.connect(self._on_cine_frame_changed)
         split = QSplitter()
         split.addWidget(left)
         split.addWidget(self.cine)
@@ -158,6 +167,11 @@ class MainWindow(QMainWindow):
             act = QAction(text, self)
             act.triggered.connect(lambda _checked=False, s=slot: s())
             bar.addAction(act)
+        self.ai_action = QAction("AI segments", self)
+        self.ai_action.setCheckable(True)
+        self.ai_action.setToolTip("Outline the coronary segments on the shown frame (AI suggestion)")
+        self.ai_action.triggered.connect(lambda checked: self.toggle_ai_segments(checked))
+        bar.addAction(self.ai_action)
         self._build_scoring_ui()
         self.item_list.currentItemChanged.connect(self._on_select)
         self.folder_combo.currentTextChanged.connect(lambda _t: self.refresh_list())
@@ -756,6 +770,75 @@ class MainWindow(QMainWindow):
         self._clear_viewer_if_shown(uids)
         self.refresh_list()
         return count
+
+    # ---- AI segments (suggestion overlay only; never touches scores or stored data) ----
+    def _load_segmenter(self) -> None:
+        path = self.data_dir / "models" / "segments.onnx"
+        if not path.exists():
+            self.segmenter_error = f"No AI segment model installed (expected at {path})."
+            return
+        try:
+            self.segmenter = Segmenter.load(path)
+        except ModelUnavailable as exc:
+            self.segmenter_error = str(exc)
+
+    def toggle_ai_segments(self, on: bool) -> bool:
+        """Show or hide the AI segment overlay. Returns whether it is now shown."""
+        if not on:
+            self._ai_on = False
+            self.ai_action.setChecked(False)
+            self.cine.clear_overlay()
+            return False
+        if self.segmenter is None:
+            self._say(f"{self.segmenter_error} See docs/ai-training.md to train and install a model.")
+            self.ai_action.setChecked(False)
+            return False
+        if self.cine.current_frame() is None:
+            self._say("Open a series first, then turn on AI segments.")
+            self.ai_action.setChecked(False)
+            return False
+        self._ai_on = True
+        self.ai_action.setChecked(True)
+        if not self._refresh_overlay():
+            self._ai_on = False
+            self.ai_action.setChecked(False)
+            return False
+        return True
+
+    def _on_cine_frame_changed(self, _index: int) -> None:
+        """Keep the overlay in step with the shown frame, but never while the cine is playing."""
+        if self._ai_on and self.cine.player is not None and not self.cine.player.playing:
+            if not self._refresh_overlay():
+                self._ai_on = False
+                self.ai_action.setChecked(False)
+
+    def _refresh_overlay(self) -> bool:
+        frame = self.cine.current_frame()
+        if frame is None or self.segmenter is None:
+            self.cine.clear_overlay()
+            return False
+        key = (self._shown_uid, self.cine.frame_index())
+        cached = self._ai_cache.get(key)
+        if cached is None:
+            self.statusBar().showMessage("Outlining segments (AI), please wait...")
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            QApplication.processEvents()
+            try:
+                masks = self.segmenter.predict(frame)
+                cached = (render_overlay(masks), segment_labels(masks))
+            except Exception as exc:                  # a model problem must never break the viewer
+                self.cine.clear_overlay()
+                QApplication.restoreOverrideCursor()
+                self.statusBar().clearMessage()
+                self._failed(f"AI segments failed: {exc}")
+                return False
+            QApplication.restoreOverrideCursor()
+            self.statusBar().clearMessage()
+            if len(self._ai_cache) >= 64:             # keep memory bounded
+                self._ai_cache.pop(next(iter(self._ai_cache)))
+            self._ai_cache[key] = cached
+        self.cine.set_overlay(*cached)
+        return True
 
     # ---- viewing ----
     def _on_select(self, current: QListWidgetItem | None, _prev=None) -> None:
