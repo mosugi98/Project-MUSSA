@@ -121,6 +121,7 @@ def test_confirm_selected_entry_uses_the_entries_list(qapp, tmp_path):
     fill_lad(win)
     win.save_entry()
     win.entries_list.setCurrentRow(0)
+    win._confirm = lambda text: True
     assert win.confirm_selected_entry() is not None
     assert "reference" in win.entries_list_rows()[0].lower()
 

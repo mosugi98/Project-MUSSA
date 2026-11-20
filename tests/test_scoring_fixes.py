@@ -366,3 +366,62 @@ def test_the_marker_updates_when_a_draft_becomes_complete(qapp, tmp_path):
         assert win.panel.answer(field, value), field
     win.save_entry()
     assert set(flags(win)) == {"not_confirmed"}
+
+
+# ---- confirming from the list: the button must never silently do nothing ----
+def test_your_own_saved_score_is_preselected_so_confirm_works_without_clicking_the_list(qapp, tmp_path):
+    win, _ = open_case(tmp_path, level="cardiologist")
+    fill_lad(win)
+    win.save_entry()
+    assert win.entries_list.currentRow() == 0
+    win._confirm = lambda text: True
+    win.confirm_button.click()
+    assert set(flags(win)) == {"reference"}
+    assert "reference" in win.statusBar().currentMessage().lower()
+
+
+def test_confirm_says_exactly_what_will_be_confirmed_and_can_be_declined(qapp, tmp_path):
+    win, _ = open_case(tmp_path, name="Dr Yogi", level="cardiologist")
+    fill_lad(win)
+    win.save_entry()
+    asked = []
+    win._confirm = lambda text: asked.append(text) or False
+    assert win.confirm_selected_entry() is None
+    assert asked and "Dr Yogi" in asked[0] and "7" in asked[0] and "reference" in asked[0].lower()
+    assert win.store.confirmation(uid_of(win)) is None and set(flags(win)) == {"not_confirmed"}
+
+
+def test_confirm_with_nothing_selected_shows_a_dialog_not_just_a_status_line(qapp, tmp_path):
+    win, _ = open_case(tmp_path, level="cardiologist")
+    fill_lad(win)
+    win.save_entry()
+    win.entries_list.setCurrentRow(-1)
+    warned = []
+    win._warn = warned.append
+    assert win.confirm_selected_entry() is None
+    assert warned and "select" in warned[0].lower()
+
+
+def test_a_lone_score_by_someone_else_is_preselected_for_the_cardiologist(qapp, tmp_path):
+    src = make_source(tmp_path)
+    win, res = open_case(tmp_path, name="Res", level="resident", src=src)
+    fill_lad(win)
+    win.save_entry()
+    card = win.add_user("Card", "cardiologist")
+    assert win.current_user().name == "Card"
+    assert win.entries_list.count() == 1 and win.entries_list.currentRow() == 0
+    win._confirm = lambda text: True
+    assert win.confirm_selected_entry().total == 7.0
+    assert set(flags(win)) == {"reference"}
+
+
+def test_the_confirm_button_for_a_resident_explains_why_it_did_nothing(qapp, tmp_path):
+    win, _ = open_case(tmp_path, level="resident")
+    fill_lad(win)
+    win.save_entry()
+    warned = []
+    win._warn = warned.append
+    win._confirm = lambda text: True
+    win.confirm_button.click()
+    assert warned and "cardiologist" in warned[0].lower()
+    assert set(flags(win)) == {"not_confirmed"}

@@ -171,11 +171,12 @@ class MainWindow(QMainWindow):
         self.entries_list = QListWidget()
         self.entries_list.setMaximumHeight(90)
         buttons = QHBoxLayout()
-        for text, slot in (("Save score", self.save_entry),
-                           ("Confirm selected entry as reference", self.confirm_selected_entry)):
-            button = QPushButton(text)
-            button.clicked.connect(lambda _c=False, s=slot: s())
-            buttons.addWidget(button)
+        self.save_button = QPushButton("Save score")
+        self.save_button.clicked.connect(lambda _c=False: self.save_entry())
+        self.confirm_button = QPushButton("Confirm selected score as reference")
+        self.confirm_button.clicked.connect(lambda _c=False: self.confirm_selected_entry())
+        buttons.addWidget(self.save_button)
+        buttons.addWidget(self.confirm_button)
         holder = QWidget()
         layout = QVBoxLayout(holder)
         layout.addWidget(self.panel, 1)
@@ -394,10 +395,22 @@ class MainWindow(QMainWindow):
             row.setData(PATH_ROLE, e.id)
             row.setData(LABEL_ROLE, e.user.id)
             self.entries_list.addItem(row)
+        self._preselect_entry()
         if ref:
             self.reference_label.setText(
                 f"Reference score: {ref.total:g} ({ref.group} risk group), confirmed by "
                 f"{ref.confirmed_by.name} ({ref.confirmed_by.level}) at {ref.confirmed_at[:16].replace('T', ' ')}.")
+
+    def _preselect_entry(self) -> None:
+        """Select the current scorer's own score, or the only score, so the confirm button has
+        something to act on without an extra click."""
+        user = self.current_user()
+        for i in range(self.entries_list.count()):
+            if user is not None and self.entries_list.item(i).data(LABEL_ROLE) == user.id:
+                self.entries_list.setCurrentRow(i)
+                return
+        if self.entries_list.count() == 1:
+            self.entries_list.setCurrentRow(0)
 
     def save_entry(self) -> Entry | None:
         user = self.current_user()
@@ -457,16 +470,49 @@ class MainWindow(QMainWindow):
         return confirmation
 
     def confirm_selected_entry(self) -> Confirmation | None:
-        item = self.entries_list.currentItem()
-        if item is None:
-            self._say("Select a saved score in the list first.")
+        """The Confirm button: make the selected saved score the reference for the open case."""
+        if self.store is None or self._scoring_study is None:
+            self._say("Open a case with Score case first.")
             return None
         user = self.current_user()
-        if user is not None and item.data(LABEL_ROLE) == user.id and self._dirty():
+        if user is None:
+            self._say("Choose a scorer first (Scorer box in the toolbar).")
+            return None
+        if user.level != "cardiologist":
+            self._warn(f"Only a cardiologist can confirm a reference score. You are signed in as "
+                       f"{user.name} ({user.level}).")
+            return None
+        item = self.entries_list.currentItem()
+        if item is None:
+            if self.entries_list.count() == 0:
+                self._say("There is no saved score for this case yet. Save a score first.")
+            else:
+                self._warn("Select the score you want to confirm in the list "
+                           "'Scores saved for this case', then click Confirm again.")
+            return None
+        if item.data(LABEL_ROLE) == user.id and self._dirty():
             self._say("Save your changes before confirming your own score "
                       "(the saved version is what would be confirmed).")
             return None
-        return self.confirm_entry(item.data(PATH_ROLE))
+        entry_id = item.data(PATH_ROLE)
+        try:
+            entry = next((e for e in self.store.entries(self._scoring_study[0]) if e.id == entry_id), None)
+        except StoreError as exc:
+            self._failed(f"Reference NOT CONFIRMED: {exc}")
+            return None
+        if entry is None:
+            self._warn("That score no longer exists. The list has been refreshed.")
+            self.refresh_entries()
+            return None
+        if entry.status != "complete":
+            self._warn(f"{entry.user.name}'s score is unfinished ({entry.status}). "
+                       "Only a complete score can be confirmed.")
+            return None
+        if not self._confirm(f"Confirm {entry.user.name}'s score ({entry.total:g}, {entry.group} risk "
+                             f"group) as the reference score for this case?\n\n"
+                             "The reference is the version other scorers are compared with."):
+            return None
+        return self.confirm_entry(entry_id)
 
     def closeEvent(self, event) -> None:
         if self._dirty() and not self._confirm("You have unsaved changes to a score. Close anyway?"):

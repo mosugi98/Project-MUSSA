@@ -61,11 +61,18 @@ All series of the same study share one marker, and it updates as soon as a score
 
 ## 4. Confirm a reference score (cardiologists)
 
-Every saved score for the case is listed under "Scores saved for this case". Select one and click
-**Confirm selected entry as reference**. The series of that case then get a green marker.
-Only complete scores can be confirmed. Later edits do not change the confirmed reference: the
-"Reference score" line always shows the confirmed snapshot, and a row that was edited afterwards is
-marked. Replacing an existing reference asks first.
+Every saved score for the case is listed under "Scores saved for this case". Your own score is
+selected automatically (or the only score, if there is just one); to confirm someone else's score,
+click it in the list first. Then click **Confirm selected score as reference**.
+
+MUSSA asks "Confirm <scorer>'s score (<total>) as the reference?" so you can check what you are
+confirming. After you answer Yes, the status bar says "Confirmed as the reference score", the
+"Reference score" line appears under the list, and the series of the study get a green marker.
+
+If nothing happens, a message tells you why: only a cardiologist can confirm; only a complete score
+can be confirmed; a score must be selected; and unsaved changes to your own score must be saved
+first (the saved version is what gets confirmed). Later edits do not change the confirmed reference
+(a row edited afterwards is marked), and replacing an existing reference asks first.
 
 ## 5. Disagreements
 
