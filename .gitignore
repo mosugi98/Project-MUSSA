@@ -1,0 +1,6 @@
+web-calculator/
+.superpowers/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+data/
