@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .model import Case, CaseResult, Lesion, LesionResult, Part
-from .tables import MEDINA, weight
+from .tables import MEDINA, SEGMENT_IDS, VISUALIZED_HELP, weight
 from .validate import validate
 
 
@@ -15,8 +15,78 @@ def group_for(total: float) -> str:
     return "intermediate"
 
 
+def _to5_points(dominance: str, active: str) -> int:
+    """Official calculateQ4V_TO5: occlusion starting in the left main (segment 5)."""
+    table = {"7": 1, "8": 2, "13": 1, "14": 2}
+    if dominance == "left":
+        table = {**table, "15": 3, "none": 4}
+    else:
+        table = {**table, "none": 3}
+    return table.get(active, 0)
+
+
+def visualized_points(dominance: str, main_segment: str, first_visualized: str) -> int:
+    """Points for the first segment beyond the occlusion that is visualized by contrast.
+
+    Ported from the official setVisualizedByContrast: walk the segments from the occlusion's
+    main segment, skipping those denied or not applicable to the dominance; each segment passed
+    before the first visualized one adds a point (the first walked segment is not counted), with
+    special cases checked in the official order.
+    """
+    start, end, denied = VISUALIZED_HELP[main_segment]
+    active = first_visualized
+    score = -1
+    for idx in range(start, end + 1):
+        number = SEGMENT_IDS[idx]
+        if weight(number, dominance) is None or number in denied:
+            continue
+        if main_segment == "5":
+            return _to5_points(dominance, active)
+        if active == "16" and number == "1":
+            score = 2
+        elif active == "none" and number == "1" and dominance == "right":
+            score = 3
+        elif active == "4" and number == "1":
+            score = 2
+        elif active == "none" and number == "2" and dominance == "right":
+            score = 2
+        elif active == "16" and number == "2":
+            score = 1
+        elif active == "4" and number == "2":
+            score = 1
+        elif active == "16" and number == "3":
+            score = 0
+        elif active == "none" and number == "3":
+            score = 1
+        elif active == "16" and number == "4":
+            score = 0
+        elif active == "4" and number == "4":
+            score = 0
+        elif active == "none" and number == "4":
+            score = 0
+        elif number != active:
+            score += 1
+            continue
+        break
+    return max(score, 0)
+
+
 def _occlusion_parts(les: Lesion, dominance: str) -> list[Part]:
-    raise NotImplementedError("total occlusion is added in plan task 4")
+    first = [s for s in SEGMENT_IDS if s in les.first_segments]
+    seg = sum(weight(s, dominance) * (5 if s in les.first_segments else 2) for s in les.segments)
+    parts = [Part("Segments (total occlusion: first segment x5, others x2)", seg)]
+    if les.age_over_3_months in ("yes", "unknown"):
+        parts.append(Part("Age of occlusion over 3 months or unknown", 1))
+    if les.blunt_stump:
+        parts.append(Part("Blunt stump", 1))
+    if les.bridging:
+        parts.append(Part("Bridging collaterals", 1))
+    beyond = visualized_points(dominance, first[0], les.beyond_first_visualized)
+    if beyond:
+        parts.append(Part("Segments not visualized beyond the occlusion", beyond))
+    if les.side_branch not in (None, "no"):
+        parts.append(Part("Side branch at the origin of the occlusion", 1))
+    return parts
 
 
 def _lesion_parts(les: Lesion, dominance: str) -> list[Part]:
