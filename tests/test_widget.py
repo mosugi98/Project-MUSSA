@@ -67,3 +67,17 @@ def test_format_summary_lists_rejections_and_warnings(qapp, tmp_path):
     text = format_summary(win.import_from(src))
     assert "Imported: 1" in text and "Rejected: 1" in text
     assert "sr.dcm" in text and "burned-in" in text
+
+
+def test_burned_in_flag_shows_on_row_and_survives_restart(qapp, tmp_path):
+    src = tmp_path / "in"
+    src.mkdir()
+    make_xa(src / "flagged.dcm", burned_in=True)
+    make_xa(src / "clean.dcm", primary=-20.0)
+    win = MainWindow(tmp_path / "data")
+    win.import_from(src)
+    texts = [win.item_list.item(i).text() for i in range(win.item_list.count())]
+    assert sum("check burned-in text" in t for t in texts) == 1
+    reopened = MainWindow(tmp_path / "data")
+    texts = [reopened.item_list.item(i).text() for i in range(reopened.item_list.count())]
+    assert sum("check burned-in text" in t for t in texts) == 1

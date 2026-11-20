@@ -15,6 +15,7 @@ from .dicom_import.views import label_view
 from .viewer.widget import CineWidget
 
 PATH_ROLE = 0x100  # Qt.UserRole
+BURNED_IN_FLAG = " | check burned-in text"
 
 
 def format_summary(result: ImportResult) -> str:
@@ -62,12 +63,14 @@ class MainWindow(QMainWindow):
             except ImportRejected:
                 continue
             view = label_view(s.primary_angle, s.secondary_angle)
-            self._add_row(f"{view} | {s.dataset.get('SeriesDescription', '')}", path)
+            flag = BURNED_IN_FLAG if str(s.dataset.get("BurnedInAnnotation", "")).upper() != "NO" else ""
+            self._add_row(f"{view} | {s.dataset.get('SeriesDescription', '')}{flag}", path)
 
     def import_from(self, path: Path) -> ImportResult:
         result = import_path(path, self.store_dir, self.salt)
         for it in result.imported:
-            self._add_row(f"{it.view_label} | {it.series_description} | {it.study_date}",
+            flag = BURNED_IN_FLAG if any("burned-in" in w for w in it.warnings) else ""
+            self._add_row(f"{it.view_label} | {it.series_description} | {it.study_date}{flag}",
                           it.stored_path)
         return result
 

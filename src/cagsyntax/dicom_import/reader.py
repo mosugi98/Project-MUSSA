@@ -15,7 +15,12 @@ DEFAULT_FPS = 15.0
 
 def _float_or_none(ds: pydicom.Dataset, keyword: str) -> float | None:
     v = ds.get(keyword)
-    return None if v is None or v == "" else float(v)
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):  # e.g. multi-valued or malformed
+        return None
 
 
 def read_xa(path: Path) -> XASeries:
@@ -26,6 +31,8 @@ def read_xa(path: Path) -> XASeries:
         ds = pydicom.dcmread(path)
     except Exception as exc:  # corrupt or non-DICOM
         raise ImportRejected(f"{path.name}: not a valid DICOM file ({exc})") from exc
+    if not ds.get("SOPInstanceUID"):
+        raise ImportRejected(f"{path.name}: missing SOPInstanceUID")
     sop = str(ds.get("SOPClassUID", ""))
     if sop not in XA_SOP_CLASSES:
         raise ImportRejected(
@@ -39,7 +46,7 @@ def read_xa(path: Path) -> XASeries:
         frames = frames[None, ...]
     frame_time = _float_or_none(ds, "FrameTime")
     cine_rate = _float_or_none(ds, "CineRate")
-    fps = 1000.0 / frame_time if frame_time else (cine_rate or DEFAULT_FPS)
+    fps = 1000.0 / frame_time if frame_time and frame_time > 0 else (cine_rate if cine_rate and cine_rate > 0 else DEFAULT_FPS)
     return XASeries(
         dataset=ds, frames=frames, fps=fps,
         primary_angle=_float_or_none(ds, "PositionerPrimaryAngle"),

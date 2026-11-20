@@ -1,8 +1,10 @@
 import pydicom
 import pytest
 
+from pydicom.dataset import Dataset
+
 from cagsyntax.dicom_import.deidentify import (
-    deidentify, get_or_create_salt, hash_mrn, scan_identifiers)
+    deidentify, get_or_create_salt, hash_mrn, identifier_strings, scan_identifiers)
 from tests.dicom_factory import make_xa
 
 FORBIDDEN = ["DOE", "JOHN", "MRN12345"]
@@ -31,7 +33,7 @@ def test_scan_detects_leak_in_original(ds):
 
 def test_strips_direct_identifiers(ds):
     out, _, _ = deidentify(ds, SALT)
-    for kw in ["PatientName", "PatientID", "PatientBirthDate", "PatientAddress",
+    for kw in ["PatientName", "PatientBirthDate", "PatientAddress",
                "OtherPatientIDs", "AccessionNumber", "ReferringPhysicianName",
                "OperatorsName", "InstitutionName", "StudyID"]:
         assert blank(out, kw), kw
@@ -89,3 +91,65 @@ def test_burned_in_annotation_warns(tmp_path):
 def test_no_warning_when_not_burned_in(ds):
     _, _, warnings = deidentify(ds, SALT)
     assert not any("burned-in" in w for w in warnings)
+
+
+def nested(ds):
+    ra = Dataset()
+    ra.AccessionNumber = "ACC987"
+    ra.RequestedProcedureID = "PROC55"
+    ds.RequestAttributesSequence = [ra]
+    other = Dataset()
+    other.PatientID = "OTHERMRN77"
+    other.IssuerOfPatientID = "HOSP1"
+    ds.OtherPatientIDsSequence = [other]
+    ds.RequestingPhysician = "SMITH^ALICE"
+    ds.ImageComments = "Pt John Doe"
+    return ds
+
+
+def test_strips_identifiers_in_nested_sequences_and_secondary_fields(ds):
+    out, _, _ = deidentify(nested(ds), SALT)
+    leaks = scan_identifiers(out, ["ACC987", "PROC55", "OTHERMRN77", "HOSP1", "SMITH", "ALICE", "John Doe"])
+    assert leaks == []
+
+
+def test_identifier_strings_collects_from_removed_fields_including_nested(ds):
+    strings = identifier_strings(nested(ds))
+    for expected in ["DOE", "JOHN", "MRN12345", "ACC987", "OTHERMRN77", "SMITH", "ALICE"]:
+        assert expected in strings, expected
+
+
+def test_scan_uses_word_boundaries_and_skips_numeric_vrs(ds):
+    ds.ManufacturerModelName = "AXIOM-Artis"
+    ds.StudyTime = "101530.000"
+    assert scan_identifiers(ds, ["ARTI", "101530"]) == []
+    assert scan_identifiers(ds, ["ARTIS"]) != []
+
+
+def test_patient_id_is_replaced_by_the_mrn_hash(ds):
+    out, h, _ = deidentify(ds, SALT)
+    assert out.PatientID == h == hash_mrn("MRN12345", SALT)
+
+
+def test_uids_are_remapped_deterministically(ds):
+    a, _, _ = deidentify(ds, SALT)
+    b, _, _ = deidentify(ds, SALT)
+    c, _, _ = deidentify(ds, b"t" * 32)
+    assert a.SOPInstanceUID != ds.SOPInstanceUID
+    assert a.SOPInstanceUID == b.SOPInstanceUID != c.SOPInstanceUID
+    assert a.SOPInstanceUID.startswith("2.25.")
+    assert a.StudyInstanceUID != ds.StudyInstanceUID
+    assert a.file_meta.MediaStorageSOPInstanceUID == a.SOPInstanceUID
+    assert a.SOPClassUID == ds.SOPClassUID
+
+
+def test_file_meta_identifiers_removed(ds):
+    ds.file_meta.SourceApplicationEntityTitle = "CATHLAB1"
+    out, _, _ = deidentify(ds, SALT)
+    assert "SourceApplicationEntityTitle" not in out.file_meta
+
+
+def test_burned_in_absent_also_warns(ds):
+    del ds.BurnedInAnnotation
+    _, _, warnings = deidentify(ds, SALT)
+    assert any("burned-in" in w for w in warnings)
