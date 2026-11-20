@@ -110,7 +110,7 @@ def test_resident_cannot_confirm_cardiologist_can_and_the_row_is_marked(qapp, tm
     fill_lad(win)
     card_entry = win.save_entry()
     assert win.confirm_entry(card_entry.id).total == 7.0
-    assert all("[scored - reference]" in win.item_list.item(i).text() for i in range(win.item_list.count()))
+    assert all(win.item_list.item(i).data(0x102) == "reference" for i in range(win.item_list.count()))
 
 
 def test_confirm_selected_entry_uses_the_entries_list(qapp, tmp_path):

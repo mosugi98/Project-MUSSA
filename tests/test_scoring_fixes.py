@@ -266,45 +266,74 @@ def test_unreadable_stored_series_gives_a_message_not_an_exception(qapp, tmp_pat
     assert "cannot be read" in win.statusBar().currentMessage().lower()
 
 
-# ---- flags on already scored series ----
-def rows_of(win):
+# ---- color flag on already scored series ----
+FLAG_ROLE = 0x102
+COLORS = {"reference": "#2e7d32", "not_confirmed": "#ef6c00", "draft": "#78909c"}
+
+
+def flags(win):
+    return [win.item_list.item(i).data(FLAG_ROLE) for i in range(win.item_list.count())]
+
+
+def texts(win):
     return [win.item_list.item(i).text() for i in range(win.item_list.count())]
 
 
-def study_rows(win, study_uid):
+def marker_color(item):
+    """Colour of the marker dot at the left of the row, and its alpha."""
+    c = item.icon().pixmap(14, 14).toImage().pixelColor(7, 7)
+    return c.name().lower(), c.alpha()
+
+
+def study_flags(win, study_uid):
     from pathlib import Path
     from cagsyntax.cases import study_of
-    return [win.item_list.item(i).text() for i in range(win.item_list.count())
+    return [win.item_list.item(i).data(FLAG_ROLE) for i in range(win.item_list.count())
             if study_of(Path(win.item_list.item(i).data(0x100)))[0] == study_uid]
 
 
-def test_unscored_series_have_no_score_flag(qapp, tmp_path):
+def test_unscored_rows_have_no_flag_and_an_invisible_spacer_so_text_stays_aligned(qapp, tmp_path):
     win = open_window(tmp_path, make_source(tmp_path))
-    assert not any("scored" in t or "draft only" in t for t in rows_of(win))
+    assert set(flags(win)) == {""}
+    item = win.item_list.item(0)
+    assert not item.icon().isNull() and marker_color(item)[1] == 0      # transparent spacer
+    assert "not scored" in item.toolTip().lower()
+    assert not any("scored" in t.lower() or "draft" in t.lower() for t in texts(win))
 
 
-def test_a_draft_only_study_is_flagged_draft_only_on_all_its_series(qapp, tmp_path):
+def test_a_draft_only_study_gets_a_grey_blue_marker_with_an_explanation(qapp, tmp_path):
     win, _ = open_case(tmp_path)
     win.panel.set_dominance("right")
     win.panel.toggle_segment("8")                             # incomplete
     win.save_entry()
-    assert all("[draft only]" in t for t in rows_of(win))
-    assert not any("scored" in t for t in rows_of(win))
+    assert set(flags(win)) == {"draft"}
+    for i in range(win.item_list.count()):
+        item = win.item_list.item(i)
+        assert marker_color(item) == (COLORS["draft"], 255)
+        assert "unfinished" in item.toolTip().lower()
+    assert not any("draft" in t.lower() or "scored" in t.lower() for t in texts(win))   # no text after the series name
 
 
-def test_a_complete_unconfirmed_score_is_flagged_not_confirmed(qapp, tmp_path):
+def test_a_complete_unconfirmed_score_gets_an_orange_marker(qapp, tmp_path):
     win, _ = open_case(tmp_path)
     fill_lad(win)
     win.save_entry()
-    assert all("[scored - not confirmed]" in t for t in rows_of(win))
-    assert not any("draft only" in t for t in rows_of(win))
+    assert set(flags(win)) == {"not_confirmed"}
+    item = win.item_list.item(0)
+    assert marker_color(item) == (COLORS["not_confirmed"], 255)
+    assert "no reference" in item.toolTip().lower()
+    assert not any("scored" in t.lower() for t in texts(win))
 
 
-def test_a_confirmed_study_is_flagged_as_reference(qapp, tmp_path):
+def test_a_confirmed_study_gets_a_green_marker(qapp, tmp_path):
     win, _ = open_case(tmp_path, level="cardiologist")
     fill_lad(win)
     win.confirm_entry(win.save_entry().id)
-    assert all("[scored - reference]" in t for t in rows_of(win))
+    assert set(flags(win)) == {"reference"}
+    item = win.item_list.item(0)
+    assert marker_color(item) == (COLORS["reference"], 255)
+    assert "confirmed" in item.toolTip().lower() and "reference" in item.toolTip().lower()
+    assert not any("scored" in t.lower() for t in texts(win))
 
 
 def test_only_the_scored_study_is_flagged(qapp, tmp_path):
@@ -312,9 +341,8 @@ def test_only_the_scored_study_is_flagged(qapp, tmp_path):
     study_x = uid_of(win)
     fill_lad(win)
     win.save_entry()
-    assert all("[scored - not confirmed]" in t for t in study_rows(win, study_x))
-    other = [t for i, t in enumerate(rows_of(win)) if t not in study_rows(win, study_x)]
-    assert other and not any("scored" in t or "draft only" in t for t in other)
+    assert set(study_flags(win, study_x)) == {"not_confirmed"}
+    assert "" in flags(win) and flags(win).count("not_confirmed") == len(study_flags(win, study_x))
 
 
 def test_the_flag_survives_a_restart(qapp, tmp_path):
@@ -323,18 +351,18 @@ def test_the_flag_survives_a_restart(qapp, tmp_path):
     win.save_entry()
     win.store.close()
     again = open_window(tmp_path)
-    assert all("[scored - not confirmed]" in t for t in rows_of(again))
+    assert set(flags(again)) == {"not_confirmed"}
 
 
-def test_the_flag_updates_when_a_draft_becomes_complete(qapp, tmp_path):
+def test_the_marker_updates_when_a_draft_becomes_complete(qapp, tmp_path):
     win, _ = open_case(tmp_path)
     win.panel.set_dominance("right")
     win.panel.toggle_segment("6")
     win.save_entry()
-    assert all("[draft only]" in t for t in rows_of(win))
+    assert set(flags(win)) == {"draft"}
     for field, value in [("occlusion", False), ("trifurcation", 0), ("bifurcation", "none"),
                          ("aorto_ostial", False), ("severe_tortuosity", False), ("length_gt20", False),
                          ("heavy_calcification", False), ("thrombus", False)]:
-        assert win.panel.answer(field, value), field          # finish the same lesion
+        assert win.panel.answer(field, value), field
     win.save_entry()
-    assert all("[scored - not confirmed]" in t for t in rows_of(win))
+    assert set(flags(win)) == {"not_confirmed"}

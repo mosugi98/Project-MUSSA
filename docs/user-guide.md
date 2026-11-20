@@ -47,21 +47,22 @@ Click **Save score** to keep your entry. If saving fails (for example the file i
 is full) you get a warning dialog and the status bar says NOT SAVED; nothing is changed. You can save an unfinished score as a draft and come back
 to it; saving again updates your entry.
 
-## Flags on scored series
+## Markers on scored series
 
-Every series of a study that already has saved scores is flagged in the list, so you can see at a
-glance what has been scored:
+A small coloured square at the left of a series shows that its study already has saved scores.
+Hold the mouse over any series to read what its marker means.
 
-- `[draft only]` - someone saved a score for this study, but it is unfinished.
-- `[scored - not confirmed]` - at least one complete score exists, but no reference yet.
-- `[scored - reference]` - a cardiologist has confirmed a reference score.
+- **Green** - a cardiologist has confirmed a reference score.
+- **Orange** - at least one complete score exists, but no reference has been confirmed yet.
+- **Grey-blue** - a score was saved, but it is unfinished (a draft).
+- **No marker** - not scored yet.
 
-Series with no flag have not been scored. The flag appears as soon as a score is saved.
+All series of the same study share one marker, and it updates as soon as a score is saved.
 
 ## 4. Confirm a reference score (cardiologists)
 
 Every saved score for the case is listed under "Scores saved for this case". Select one and click
-**Confirm selected entry as reference**. The series of that case are then flagged `[scored - reference]`.
+**Confirm selected entry as reference**. The series of that case then get a green marker.
 Only complete scores can be confirmed. Later edits do not change the confirmed reference: the
 "Reference score" line always shows the confirmed snapshot, and a row that was edited afterwards is
 marked. Replacing an existing reference asks first.

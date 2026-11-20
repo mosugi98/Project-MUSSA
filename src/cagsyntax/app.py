@@ -5,8 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget)
@@ -27,6 +27,7 @@ from .viewer.widget import CineWidget
 
 PATH_ROLE = 0x100   # Qt.UserRole: stored file path
 LABEL_ROLE = 0x101  # folder name of the row
+FLAG_ROLE = 0x102   # score flag of the row: "", "draft", "not_confirmed" or "reference"
 ALL_FOLDERS = "All folders"
 BURNED_IN_FLAG = " | check burned-in text"
 
@@ -35,25 +36,52 @@ def kind_text(kind: str, frame_count: int) -> str:
     return f"CINE {frame_count} frames" if kind == "cine" else "STILL"
 
 
+FLAG_COLORS = {"reference": "#2e7d32", "not_confirmed": "#ef6c00", "draft": "#78909c"}
+FLAG_TIPS = {
+    "reference": "Scored - reference: a cardiologist has confirmed a reference score for this study.",
+    "not_confirmed": "Scored - not confirmed: at least one complete score is saved for this study, "
+                     "but no reference has been confirmed yet.",
+    "draft": "Draft only: a score was saved for this study but it is unfinished.",
+    "": "Not scored yet.",
+}
+_ICONS: dict[str, QIcon] = {}
+
+
 def score_flag(status: tuple[int, int, bool] | None) -> str:
-    """Flag for a series whose study has saved scores: (complete entries, drafts, has reference)."""
+    """Flag key for a series whose study has saved scores: (complete entries, drafts, has reference)."""
     if status is None:
         return ""
     complete, drafts, confirmed = status
     if confirmed:
-        return "[scored - reference]"
+        return "reference"
     if complete:
-        return "[scored - not confirmed]"
+        return "not_confirmed"
     if drafts:
-        return "[draft only]"
+        return "draft"
     return ""
 
 
+def flag_icon(key: str) -> QIcon:
+    """Small coloured marker shown at the left of a row. Unscored rows get an invisible spacer of
+    the same size so the text of all rows lines up."""
+    if key not in _ICONS:
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        if key in FLAG_COLORS:
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(FLAG_COLORS[key]))
+            painter.drawRoundedRect(1, 1, 12, 12, 3, 3)
+            painter.end()
+        _ICONS[key] = QIcon(pixmap)
+    return _ICONS[key]
+
+
 def row_text(view: str, description: str, study_date: str, burned_in_unclear: bool,
-             folder: str = DEFAULT_LABEL, kind: str = "cine", frame_count: int = 1,
-             flag: str = "") -> str:
+             folder: str = DEFAULT_LABEL, kind: str = "cine", frame_count: int = 1) -> str:
     return (f"[{folder}] {kind_text(kind, frame_count)} | {view} | {description} | {study_date}"
-            f"{BURNED_IN_FLAG if burned_in_unclear else ''}{' | ' + flag if flag else ''}")
+            f"{BURNED_IN_FLAG if burned_in_unclear else ''}")
 
 
 def format_summary(result: ImportResult) -> str:
@@ -91,6 +119,7 @@ class MainWindow(QMainWindow):
             self.store_error = str(exc)                        # viewer still works; scoring is off
         self.folder_combo = QComboBox()
         self.item_list = QListWidget()
+        self.item_list.setIconSize(QSize(14, 14))
         left = QWidget()
         box = QVBoxLayout(left)
         box.setContentsMargins(0, 0, 0, 0)
@@ -497,8 +526,11 @@ class MainWindow(QMainWindow):
         self.item_list.clear()
         for e, h in rows:
             row = QListWidgetItem(row_text(h.view_label, h.series_description, h.study_date,
-                                           h.burned_in_unclear, e.label, h.kind, h.frame_count,
-                                           score_flag(status.get(h.study_uid))))
+                                           h.burned_in_unclear, e.label, h.kind, h.frame_count))
+            key = score_flag(status.get(h.study_uid))
+            row.setIcon(flag_icon(key))                        # colour marker at the left of the text
+            row.setToolTip(FLAG_TIPS[key])
+            row.setData(FLAG_ROLE, key)
             row.setData(PATH_ROLE, str(e.path))
             row.setData(LABEL_ROLE, e.label)
             self.item_list.addItem(row)
