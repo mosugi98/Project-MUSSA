@@ -21,7 +21,14 @@ A desktop app that lets clinicians review coronary angiogram DICOM (XA) series, 
 - Scorers: several people of mixed experience (residents and cardiologists). The tool records who scored each case and their experience level.
 - Reference label: the version confirmed by a cardiologist.
 - Data: raw XA cine DICOM exported from the cath lab, no existing annotations. Expected volume: 100 to 500 cases over the next few months.
-- Non-XA DICOM (for example the X-Ray Radiation Dose SR) is rejected on import with a clear message.
+- Non-XA DICOM (for example the X-Ray Radiation Dose SR, or a Secondary Capture whose modality is not XA) is rejected on import with a clear message.
+
+### 3.1 What matters most
+
+- **Cine series are the primary data.** A cine is a multi-frame XA image: one contrast injection filmed from one fixed C-arm angle. Scoring decisions (lesion present, stenosis of 50% or more, total occlusion, bifurcation, calcification and the rest) are made by scrubbing a cine to its best-opacified frames. Phase B models train and are evaluated on cine frames.
+- **The C-arm angles of each cine come second.** They give the view label (for example RAO 27 CRAN 18), which tells the scorer which segments that view can show.
+- **Stills are secondary reference only.** A still is a single-frame Secondary Capture image with modality XA, saved by the operator as a key frame (it has angles but no frame timing). The app accepts it, labels it STILL, and lists it after the cines of its folder. A still is never counted as a cine, and the dataset export (section 5.3) leaves stills out unless asked for them.
+- Everything else is rejected with a clear message.
 
 ## 4. Platform
 
@@ -45,6 +52,7 @@ Five independent units. Each communicates only through the interfaces shown.
 - Keep study date, modality, series description and positioner angles.
 - A scan test checks the stored output for leftover identifiers.
 - Unsupported or corrupt files produce a visible error, never a silent skip.
+- Each imported series is marked CINE (with its frame count) or STILL, and the list shows cines before stills within each folder.
 
 ### 5.2 Scoring form and engine
 
@@ -59,7 +67,7 @@ Five independent units. Each communicates only through the interfaces shown.
 
 - One record per case. Multiple scorer entries per case. One confirmed entry per case, set by a cardiologist.
 - Disagreement tracking: the app reports how often scorers differ from the confirmed version, per scorer level.
-- Export: confirmed cases as a dataset (de-identified image references plus form data and score) for Phase B.
+- Export: confirmed cases as a dataset (de-identified image references plus form data and score) for Phase B. Cine series only by default; stills are excluded unless the user asks for them.
 
 ## 6. Phase B: AI suggestions
 

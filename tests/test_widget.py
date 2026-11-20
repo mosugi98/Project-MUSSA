@@ -228,3 +228,26 @@ def test_rename_folder_blank_name_is_ignored(qapp, tmp_path):
     win, _, _ = _two_folders(tmp_path)
     assert win.rename_folder("Case 01", "   ") == 0
     assert sum("[Case 01]" in t for t in _rows(win)) == 2
+
+
+def test_rows_say_cine_or_still_and_cines_come_first(qapp, tmp_path):
+    from tests.dicom_factory import SC_SOP
+    d = tmp_path / "in"
+    d.mkdir()
+    make_xa(d / "a_still.dcm", sop_class=SC_SOP)       # sorts first by file name
+    make_xa(d / "z_cine.dcm", frames=7)
+    win = MainWindow(tmp_path / "data")
+    win.import_from(d, "Case 01")
+    rows = _rows(win)
+    assert "CINE 7 frames" in rows[0]
+    assert "STILL" in rows[1]
+
+
+def test_summary_counts_cines_and_stills(qapp, tmp_path):
+    from tests.dicom_factory import SC_SOP
+    d = tmp_path / "in"
+    d.mkdir()
+    make_xa(d / "cine.dcm")
+    make_xa(d / "still.dcm", sop_class=SC_SOP)
+    text = format_summary(MainWindow(tmp_path / "data").import_from(d))
+    assert "Imported: 2" in text and "1 cine" in text and "1 still" in text

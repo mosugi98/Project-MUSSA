@@ -63,3 +63,34 @@ def test_read_header_does_not_decode_pixels(tmp_path):
     assert h.series_description == "LAD cine"
     assert h.study_date == "20261120"
     assert h.burned_in_unclear is False  # factory file states BurnedInAnnotation = NO
+
+
+def test_multiframe_xa_is_a_cine(tmp_path):
+    assert read_xa(make_xa(tmp_path / "a.dcm")).kind == "cine"
+
+
+def test_single_frame_secondary_capture_xa_is_accepted_as_a_still(tmp_path):
+    from tests.dicom_factory import SC_SOP
+    s = read_xa(make_xa(tmp_path / "s.dcm", sop_class=SC_SOP))
+    assert s.kind == "still"
+    assert s.frames.shape == (1, 64, 64)
+    assert (s.primary_angle, s.secondary_angle) == (30.0, 20.0)
+
+
+def test_secondary_capture_that_is_not_xa_modality_is_rejected(tmp_path):
+    from tests.dicom_factory import SC_SOP
+    p = make_xa(tmp_path / "o.dcm", sop_class=SC_SOP)
+    ds = pydicom.dcmread(p)
+    ds.Modality = "OT"
+    ds.save_as(p)
+    with pytest.raises(ImportRejected, match="not an XA"):
+        read_xa(p)
+
+
+def test_read_header_reports_kind_and_frame_count(tmp_path):
+    from cagsyntax.dicom_import.reader import read_header
+    from tests.dicom_factory import SC_SOP
+    cine = read_header(make_xa(tmp_path / "a.dcm", frames=7))
+    still = read_header(make_xa(tmp_path / "s.dcm", sop_class=SC_SOP))
+    assert (cine.kind, cine.frame_count) == ("cine", 7)
+    assert (still.kind, still.frame_count) == ("still", 1)

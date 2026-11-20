@@ -180,3 +180,14 @@ def test_procedure_code_in_study_id_matching_a_description_is_not_a_leak(tmp_pat
 
     src = edit(make_xa(tmp_path / "in" / "a.dcm"), add)
     assert len(import_path(src, tmp_path / "store", SALT).imported) == 1
+
+
+def test_still_is_imported_and_marked_as_still(tmp_path):
+    from tests.dicom_factory import SC_SOP
+    d = tmp_path / "in"
+    d.mkdir()
+    make_xa(d / "cine.dcm")
+    make_xa(d / "still.dcm", sop_class=SC_SOP)
+    r = import_path(d, tmp_path / "store", SALT)
+    assert sorted(i.kind for i in r.imported) == ["cine", "still"]
+    assert r.rejected == []

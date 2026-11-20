@@ -23,14 +23,20 @@ ALL_FOLDERS = "All folders"
 BURNED_IN_FLAG = " | check burned-in text"
 
 
+def kind_text(kind: str, frame_count: int) -> str:
+    return f"CINE {frame_count} frames" if kind == "cine" else "STILL"
+
+
 def row_text(view: str, description: str, study_date: str, burned_in_unclear: bool,
-             folder: str = DEFAULT_LABEL) -> str:
-    return (f"[{folder}] {view} | {description} | {study_date}"
+             folder: str = DEFAULT_LABEL, kind: str = "cine", frame_count: int = 1) -> str:
+    return (f"[{folder}] {kind_text(kind, frame_count)} | {view} | {description} | {study_date}"
             f"{BURNED_IN_FLAG if burned_in_unclear else ''}")
 
 
 def format_summary(result: ImportResult) -> str:
-    lines = [f"Imported: {len(result.imported)}",
+    cines = sum(i.kind == "cine" for i in result.imported)
+    stills = len(result.imported) - cines
+    lines = [f"Imported: {len(result.imported)} ({cines} cine, {stills} still)",
              f"Duplicates skipped: {len(result.skipped_duplicates)}",
              f"Rejected: {len(result.rejected)}"]
     lines += [f"  - {msg}" for _, msg in result.rejected]
@@ -88,17 +94,21 @@ class MainWindow(QMainWindow):
         self.folder_combo.setCurrentText(wanted if wanted in labels else ALL_FOLDERS)
         self.folder_combo.blockSignals(False)
         shown = self.folder_combo.currentText()
-        self.item_list.blockSignals(True)
-        self.item_list.clear()
+        rows = []
         for e in entries:
             if shown not in (ALL_FOLDERS, e.label):
                 continue
             try:
-                h = read_header(e.path)
+                rows.append((e, read_header(e.path)))
             except ImportRejected:
                 continue
+        # Cine series are the primary data, so they come before stills within each folder.
+        rows.sort(key=lambda r: (r[0].label.lower(), r[1].kind != "cine", r[0].path.name))
+        self.item_list.blockSignals(True)
+        self.item_list.clear()
+        for e, h in rows:
             row = QListWidgetItem(row_text(h.view_label, h.series_description, h.study_date,
-                                           h.burned_in_unclear, e.label))
+                                           h.burned_in_unclear, e.label, h.kind, h.frame_count))
             row.setData(PATH_ROLE, str(e.path))
             row.setData(LABEL_ROLE, e.label)
             self.item_list.addItem(row)

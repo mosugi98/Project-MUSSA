@@ -11,7 +11,17 @@ XA_SOP_CLASSES = {
     "1.2.840.10008.5.1.4.1.1.12.1",    # X-Ray Angiographic Image Storage
     "1.2.840.10008.5.1.4.1.1.12.1.1",  # Enhanced XA Image Storage
 }
+# Operator-saved key frames: single-frame Secondary Capture images whose modality is XA.
+# They are accepted as secondary reference "stills"; cine series are the primary data.
+SECONDARY_CAPTURE_SOP = "1.2.840.10008.5.1.4.1.1.7"
 DEFAULT_FPS = 15.0
+
+
+def _frame_count(ds: pydicom.Dataset) -> int:
+    try:
+        return max(1, int(ds.get("NumberOfFrames", 1)))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _float_or_none(ds: pydicom.Dataset, keyword: str) -> float | None:
@@ -35,10 +45,14 @@ def read_xa(path: Path) -> XASeries:
     if not ds.get("SOPInstanceUID"):
         raise ImportRejected(f"{path.name}: missing SOPInstanceUID")
     sop = str(ds.get("SOPClassUID", ""))
-    if sop not in XA_SOP_CLASSES:
+    is_xa_still = sop == SECONDARY_CAPTURE_SOP and str(ds.get("Modality", "")) == "XA"
+    if sop not in XA_SOP_CLASSES and not is_xa_still:
         raise ImportRejected(
             f"{path.name}: not an XA image (SOP class {sop or 'missing'}, "
-            f"modality {ds.get('Modality', '?')}); only XA cine series are imported")
+            f"modality {ds.get('Modality', '?')}); only XA cine series and XA key-frame "
+            f"stills are imported")
+    if int(ds.get("SamplesPerPixel", 1)) != 1:
+        raise ImportRejected(f"{path.name}: not a grayscale image; cannot import")
     try:
         frames = ds.pixel_array
     except Exception as exc:
@@ -52,7 +66,8 @@ def read_xa(path: Path) -> XASeries:
         dataset=ds, frames=frames, fps=fps,
         primary_angle=_float_or_none(ds, "PositionerPrimaryAngle"),
         secondary_angle=_float_or_none(ds, "PositionerSecondaryAngle"),
-        sop_instance_uid=str(ds.SOPInstanceUID), source=path)
+        sop_instance_uid=str(ds.SOPInstanceUID), source=path,
+        kind="cine" if frames.shape[0] > 1 else "still")
 
 
 def read_header(path: Path) -> SeriesHeader:
@@ -67,4 +82,5 @@ def read_header(path: Path) -> SeriesHeader:
                               _float_or_none(ds, "PositionerSecondaryAngle")),
         series_description=str(ds.get("SeriesDescription", "")),
         study_date=str(ds.get("StudyDate", "")),
-        burned_in_unclear=str(ds.get("BurnedInAnnotation", "")).upper() != "NO")
+        burned_in_unclear=str(ds.get("BurnedInAnnotation", "")).upper() != "NO",
+        kind="cine" if _frame_count(ds) > 1 else "still", frame_count=_frame_count(ds))

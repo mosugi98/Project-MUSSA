@@ -20,6 +20,7 @@ class XASeries:
     secondary_angle: float | None
     sop_instance_uid: str
     source: Path
+    kind: str = "cine"  # "cine" (multi-frame) or "still" (single key frame)
 
 
 @dataclass
@@ -31,6 +32,7 @@ class ImportedItem:
     study_date: str
     series_description: str
     warnings: list[str]
+    kind: str = "cine"
 
 
 @dataclass
@@ -47,3 +49,5 @@ class SeriesHeader:
     series_description: str
     study_date: str
     burned_in_unclear: bool  # BurnedInAnnotation is anything other than "NO"
+    kind: str = "cine"
+    frame_count: int = 1

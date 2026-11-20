@@ -35,7 +35,7 @@ def _import_one(path: Path, store_dir: Path, salt: bytes, result: ImportResult) 
         view_label=label_view(series.primary_angle, series.secondary_angle),
         study_date=str(out.get("StudyDate", "")),
         series_description=str(out.get("SeriesDescription", "")),
-        warnings=warnings))
+        warnings=warnings, kind=series.kind))
 
 
 def import_path(src: Path, store_dir: Path, salt: bytes) -> ImportResult:

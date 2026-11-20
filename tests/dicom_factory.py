@@ -7,6 +7,7 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 
 XA_SOP = "1.2.840.10008.5.1.4.1.1.12.1"
 DOSE_SR_SOP = "1.2.840.10008.5.1.4.1.1.88.67"
+SC_SOP = "1.2.840.10008.5.1.4.1.1.7"  # Secondary Capture (operator-saved key frame)
 
 
 def make_xa(path: Path, *, frames: int = 5, rows: int = 64, cols: int = 64,
@@ -24,7 +25,7 @@ def make_xa(path: Path, *, frames: int = 5, rows: int = 64, cols: int = 64,
     ds.SOPInstanceUID = meta.MediaStorageSOPInstanceUID
     ds.StudyInstanceUID = generate_uid()
     ds.SeriesInstanceUID = generate_uid()
-    ds.Modality = "XA" if sop_class == XA_SOP else "SR"
+    ds.Modality = "XA" if sop_class in (XA_SOP, SC_SOP) else "SR"
     ds.PatientName = name
     ds.PatientID = mrn
     ds.PatientBirthDate = "19600101"
@@ -40,10 +41,13 @@ def make_xa(path: Path, *, frames: int = 5, rows: int = 64, cols: int = 64,
         ds.PositionerSecondaryAngle = secondary
     if frame_time_ms is not None:
         ds.FrameTime = frame_time_ms
-    if sop_class == XA_SOP:
+    if sop_class in (XA_SOP, SC_SOP):
+        if sop_class == SC_SOP:
+            frames = 1
         rng = np.random.default_rng(0)
         px = rng.integers(0, 256, size=(frames, rows, cols), dtype=np.uint8)
-        ds.NumberOfFrames = frames
+        if sop_class == XA_SOP:
+            ds.NumberOfFrames = frames
         ds.Rows, ds.Columns = rows, cols
         ds.SamplesPerPixel = 1
         ds.PhotometricInterpretation = "MONOCHROME2"
