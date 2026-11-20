@@ -83,4 +83,5 @@ def read_header(path: Path) -> SeriesHeader:
         series_description=str(ds.get("SeriesDescription", "")),
         study_date=str(ds.get("StudyDate", "")),
         burned_in_unclear=str(ds.get("BurnedInAnnotation", "")).upper() != "NO",
-        kind="cine" if _frame_count(ds) > 1 else "still", frame_count=_frame_count(ds))
+        kind="cine" if _frame_count(ds) > 1 else "still", frame_count=_frame_count(ds),
+        study_uid=str(ds.get("StudyInstanceUID", "")), mrn_hash=str(ds.get("PatientID", "")))

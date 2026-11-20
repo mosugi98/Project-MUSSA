@@ -51,3 +51,5 @@ class SeriesHeader:
     burned_in_unclear: bool  # BurnedInAnnotation is anything other than "NO"
     kind: str = "cine"
     frame_count: int = 1
+    study_uid: str = ""   # remapped StudyInstanceUID of the stored file
+    mrn_hash: str = ""    # stored PatientID: the salted MRN hash
