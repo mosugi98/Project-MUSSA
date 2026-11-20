@@ -79,6 +79,23 @@ first (the saved version is what gets confirmed). Later edits do not change the 
 **Disagreements** shows, for residents and for cardiologists, how many scores were compared with
 the confirmed references and how often the total and the risk group were the same.
 
+## 6. Export for the AI step
+
+**Export dataset** (second toolbar row) writes every case that has a confirmed reference into a new folder
+you name: `dataset.json`, `cases.csv`, `series.csv` and a `README.txt`. It asks two questions:
+
+- **Include still images?** Cine series are always included; stills only if you say yes.
+- **Copy the de-identified images into the export?** No keeps paths into MUSSA's data folder (smaller,
+  but moving that folder breaks them). Yes copies the images into an `images` folder with a checksum for
+  each.
+
+The export never contains scorer names, your folder names, original IDs, MRNs or file paths. It never
+overwrites an existing folder: pick a new name. If the current scoring engine disagrees with a confirmed
+reference, the case is still exported as confirmed and flagged in the README. The format is described in
+`docs/dataset-format.md`.
+
+Keep exports on the same protected computer; they are research data.
+
 ## Where your data is
 
 `C:\Users\<you>\MUSSA-data` holds the de-identified images (`store`), folder names, the case store
