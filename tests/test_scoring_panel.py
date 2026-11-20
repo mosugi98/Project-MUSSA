@@ -7,7 +7,7 @@ import dataclasses
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from cagsyntax.scoring import Case
+from cagsyntax.scoring import Case, Lesion
 from cagsyntax.ui.scoring_panel import ScoringPanel
 from tests.scoring.builders import case, lesion, occluded
 
@@ -172,3 +172,29 @@ def test_clicking_an_answer_button_sets_the_answer(panel):
 def test_disclaimer_is_always_visible(panel):
     assert "not a certified medical device" in panel.disclaimer_label.text().lower()
     assert not panel.disclaimer_label.isHidden()
+
+
+def test_set_case_prunes_segments_that_do_not_exist_for_the_dominance(panel):
+    panel.set_case(case(lesion(segments=["15"]), diffuse=["15"]))
+    assert panel.case().lesions[0].segments == [] and panel.case().diffuse_segments == []
+    assert "15" in panel.result_label.text()
+
+
+def test_set_case_with_an_unknown_first_segment_does_not_raise(panel):
+    odd = Case(dominance="right", scoring_dominance=None,
+               lesions=[Lesion(segments=["99"], occlusion=True, first_segment="99")], diffuse_segments=[])
+    panel.set_case(odd)
+    assert panel.case().lesions[0].segments == []
+
+
+def test_removing_a_lesion_before_the_current_one_keeps_the_same_lesion_selected(panel):
+    panel.set_dominance("right")
+    panel.toggle_segment("6")
+    panel.add_lesion()
+    panel.toggle_segment("7")
+    panel.add_lesion()
+    panel.toggle_segment("8")
+    assert panel.current_lesion() == 2
+    panel.remove_lesion(0)
+    assert panel.current_lesion() == 1
+    assert panel.case().lesions[panel.current_lesion()].segments == ["8"]

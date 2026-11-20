@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
@@ -17,7 +17,7 @@ from .dicom_import.importer import import_path
 from .dicom_import.models import ImportRejected, ImportResult
 from .dicom_import.reader import read_header, read_xa
 from .dicom_import.views import label_view
-from .form_state import case_from_json
+from .form_state import case_from_json, case_to_json
 from .library import DEFAULT_LABEL, Library
 from .report import disagreement_report
 from .scoring import Case, Lesion
@@ -65,6 +65,10 @@ class MainWindow(QMainWindow):
         self.salt = get_or_create_salt(self.data_dir)
         self._shown_uid: str | None = None
         self._scoring_study: tuple[str, str] | None = None     # (study uid, MRN hash) of the open case
+        self._saved_json: str | None = None                    # form as last loaded or saved
+        self._form_unreadable = False                          # the stored entry could not be read
+        self._open_label = ""
+        self._active_user_id: int | None = None
         self.store: CaseStore | None = None
         self.store_error = ""
         try:
@@ -100,6 +104,12 @@ class MainWindow(QMainWindow):
         if self.store_error:
             self.statusBar().showMessage(self.store_error)
 
+    def announce_startup_problems(self) -> None:
+        """Show the case-store problem (if any) in a dialog. main() calls this once the window is
+        running so the problem is not missed; the status bar alone is easy to overlook."""
+        if self.store_error:
+            self._warn(self.store_error)
+
     # ---- scoring UI ----
     def _build_scoring_ui(self) -> None:
         self.addToolBarBreak()                      # scoring tools get their own row
@@ -128,6 +138,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.panel, 1)
         layout.addWidget(QLabel("Scores saved for this case:"))
         layout.addWidget(self.entries_list)
+        self.reference_label = QLabel("")
+        self.reference_label.setWordWrap(True)
+        layout.addWidget(self.reference_label)
         layout.addLayout(buttons)
         self.scoring_dock = QDockWidget("Scoring", self)
         self.scoring_dock.setWidget(holder)
@@ -137,11 +150,26 @@ class MainWindow(QMainWindow):
     def _say(self, text: str) -> None:
         self.statusBar().showMessage(text)
 
+    def _warn(self, text: str) -> None:
+        QMessageBox.warning(self, "MUSSA", text)
+
+    def _failed(self, text: str) -> None:
+        """A failure the scorer must not miss: status bar plus a dialog."""
+        self._say(text)
+        self._warn(text)
+
+    def _dirty(self) -> bool:
+        return (self._scoring_study is not None and self._saved_json is not None
+                and case_to_json(self.panel.case()) != self._saved_json)
+
     def _restore_users(self) -> None:
         self._fill_user_combo()
         if self.store is None:
             return
-        last = self.store.get_meta("last_user_id")
+        try:
+            last = self.store.get_meta("last_user_id")
+        except StoreError:
+            return
         if last and last.isdigit():
             index = self.user_combo.findData(int(last))
             if index >= 0:
@@ -151,16 +179,35 @@ class MainWindow(QMainWindow):
         self.user_combo.blockSignals(True)
         self.user_combo.clear()
         self.user_combo.addItem("No scorer chosen", None)
-        for u in (self.store.users() if self.store else []):
+        try:
+            users = self.store.users() if self.store else []
+        except StoreError as exc:
+            users = []
+            self._say(str(exc))
+        for u in users:
             self.user_combo.addItem(f"{u.name} ({u.level})", u.id)
         if select_id is not None:
             self.user_combo.setCurrentIndex(max(0, self.user_combo.findData(select_id)))
         self.user_combo.blockSignals(False)
+        self._active_user_id = self.user_combo.currentData()
 
     def _on_user_changed(self, _index: int) -> None:
+        new_id = self.user_combo.currentData()
+        if new_id == self._active_user_id:
+            return
+        if self._dirty() and not self._confirm(
+                "You have unsaved changes to this score. Switch scorer and discard them?"):
+            self.user_combo.blockSignals(True)
+            self.user_combo.setCurrentIndex(max(0, self.user_combo.findData(self._active_user_id)))
+            self.user_combo.blockSignals(False)
+            return
+        self._active_user_id = new_id
         user = self.current_user()
         if self.store is not None and user is not None:
-            self.store.set_meta("last_user_id", str(user.id))
+            try:
+                self.store.set_meta("last_user_id", str(user.id))
+            except StoreError as exc:
+                self._say(str(exc))
         if self._scoring_study is not None and not self.scoring_dock.isHidden():
             self._load_scoring_case()
 
@@ -168,20 +215,28 @@ class MainWindow(QMainWindow):
         user_id = self.user_combo.currentData()
         if self.store is None or user_id is None:
             return None
-        return next((u for u in self.store.users() if u.id == user_id), None)
+        try:
+            return next((u for u in self.store.users() if u.id == user_id), None)
+        except StoreError:
+            return None
 
     def add_user(self, name: str, level: str) -> User | None:
-        """Add a scorer and make them the current one. Returns None (with a message) on failure."""
+        """Add a scorer and switch to them (asking first if there are unsaved edits).
+        Returns None, with a message, if the scorer could not be added."""
         if self.store is None:
             self._say(self.store_error or "Scoring is not available.")
             return None
+        previous = self._active_user_id
         try:
             user = self.store.add_user(name, level)
         except ValueError as exc:
             self._say(str(exc))
             return None
-        self._fill_user_combo(select_id=user.id)
-        self.store.set_meta("last_user_id", str(user.id))
+        except StoreError as exc:
+            self._failed(f"Scorer NOT ADDED: {exc}")
+            return None
+        self._fill_user_combo(select_id=previous)                 # list updated, scorer unchanged
+        self.user_combo.setCurrentIndex(self.user_combo.findData(user.id))   # may ask about unsaved edits
         return user
 
     def _ask_add_user(self) -> None:
@@ -194,11 +249,18 @@ class MainWindow(QMainWindow):
 
     # ---- scoring ----
     def _selected_study(self) -> tuple[str, str] | None:
+        """(study uid, MRN hash) of the selected series; raises ImportRejected if it cannot be read."""
         item = self.item_list.currentItem()
         if item is None:
             return None
         uid, mrn_hash = study_of(Path(item.data(PATH_ROLE)))
         return (uid, mrn_hash) if uid else None
+
+    def _case_label(self) -> str:
+        item = self.item_list.currentItem()
+        path = Path(item.data(PATH_ROLE))
+        header = read_header(path)
+        return f"{item.data(LABEL_ROLE)}, study {header.study_date}, case ...{header.study_uid[-6:]}"
 
     def score_selected_case(self) -> bool:
         """Open the scoring form for the study of the selected series."""
@@ -208,12 +270,29 @@ class MainWindow(QMainWindow):
         if self.current_user() is None:
             self._say("Choose or add a scorer first (Scorer box in the toolbar).")
             return False
-        study = self._selected_study()
+        try:
+            study = self._selected_study()
+            label = self._case_label() if study else ""
+        except ImportRejected:
+            self._say("This series cannot be read, so its case cannot be opened.")
+            return False
         if study is None:
             self._say("Select a series of the case you want to score.")
             return False
+        if self._dirty():
+            if study == self._scoring_study:
+                self.scoring_dock.show()                       # same case: keep the edits
+                return True
+            if not self._confirm("You have unsaved changes to the open score. Open another case "
+                                 "and discard them?"):
+                return False
+        try:
+            self.store.ensure_case(*study)
+        except StoreError as exc:
+            self._failed(f"The case could not be opened: {exc}")
+            return False
         self._scoring_study = study
-        self.store.ensure_case(*study)
+        self._open_label = label
         self._load_scoring_case()
         self.scoring_dock.show()
         return True
@@ -221,42 +300,80 @@ class MainWindow(QMainWindow):
     def _load_scoring_case(self) -> None:
         uid, _hash = self._scoring_study
         user = self.current_user()
-        mine = next((e for e in self.store.entries(uid) if user and e.user.id == user.id), None)
-        case = Case(dominance=None, scoring_dominance=None, lesions=[Lesion(segments=[])])
+        blank = Case(dominance=None, scoring_dominance=None, lesions=[Lesion(segments=[])])
+        self._form_unreadable = False
+        try:
+            mine = next((e for e in self.store.entries(uid) if user and e.user.id == user.id), None)
+        except StoreError as exc:
+            self._failed(f"The saved scores could not be read: {exc}")
+            mine = None
+        case = blank
         if mine is not None:
             try:
                 case = case_from_json(json.dumps(mine.form))
             except ValueError:
-                self._say("The saved score could not be read; starting a new one.")
-        self.panel.set_case(case)
-        self.scoring_dock.setWindowTitle(f"Scoring - {user.name if user else ''}")
+                self._form_unreadable = True
+        try:
+            self.panel.set_case(case)
+        except (ValueError, KeyError, TypeError):
+            self._form_unreadable = True
+            self.panel.set_case(blank)
+        self._saved_json = case_to_json(self.panel.case())
+        self.scoring_dock.setWindowTitle(f"Scoring - {user.name if user else ''} - {self._open_label}")
         self.refresh_entries()
+        if self._form_unreadable:
+            self._say("The saved score could not be read; starting a new one. "
+                      "Saving will replace the saved one (you will be asked).")
 
     def entries_list_rows(self) -> list[str]:
         return [self.entries_list.item(i).text() for i in range(self.entries_list.count())]
 
     def refresh_entries(self) -> None:
         self.entries_list.clear()
+        self.reference_label.setText("")
         if self.store is None or self._scoring_study is None:
             return
         uid = self._scoring_study[0]
-        ref = self.store.confirmation(uid)
-        for e in self.store.entries(uid):
+        try:
+            ref = self.store.confirmation(uid)
+            entries = self.store.entries(uid)
+        except StoreError as exc:
+            self._say(str(exc))
+            return
+        for e in entries:
             total = f"{e.total:g} ({e.group})" if e.total is not None else "no score"
-            mark = " - REFERENCE" if ref and ref.entry_id == e.id else ""
+            mark = ""
+            if ref and ref.entry_id == e.id:
+                edited = e.total != ref.total or e.form != ref.form
+                mark = " - REFERENCE (edited since; the reference is unchanged)" if edited else " - REFERENCE"
             row = QListWidgetItem(f"{e.user.name} ({e.user.level}): {e.status}, {total}, "
                                   f"{e.saved_at[:16].replace('T', ' ')}{mark}")
             row.setData(PATH_ROLE, e.id)
+            row.setData(LABEL_ROLE, e.user.id)
             self.entries_list.addItem(row)
+        if ref:
+            self.reference_label.setText(
+                f"Reference score: {ref.total:g} ({ref.group} risk group), confirmed by "
+                f"{ref.confirmed_by.name} ({ref.confirmed_by.level}) at {ref.confirmed_at[:16].replace('T', ' ')}.")
 
     def save_entry(self) -> Entry | None:
         user = self.current_user()
         if self.store is None or self._scoring_study is None or user is None:
             self._say("Open a case and choose a scorer before saving.")
             return None
+        if self._form_unreadable and not self._confirm(
+                "The score saved earlier for this case could not be read. Saving now will replace "
+                "it. Continue?"):
+            return None
         result = self.panel.result()
-        entry = self.store.save_entry(self._scoring_study[0], user.id,
-                                      dataclasses.asdict(self.panel.case()), result)
+        try:
+            entry = self.store.save_entry(self._scoring_study[0], user.id,
+                                          dataclasses.asdict(self.panel.case()), result)
+        except (StoreError, ValueError) as exc:
+            self._failed(f"Score NOT SAVED: {exc}")
+            return None
+        self._form_unreadable = False
+        self._saved_json = case_to_json(self.panel.case())
         if result.status == "complete":
             self._say(f"Saved: total {result.total:g} ({result.group} risk group).")
         else:
@@ -269,10 +386,26 @@ class MainWindow(QMainWindow):
         if self.store is None or self._scoring_study is None or user is None:
             self._say("Open a case and choose a scorer first.")
             return None
+        if user.level != "cardiologist":
+            self._say("Only a cardiologist can confirm a reference score.")
+            return None
+        uid = self._scoring_study[0]
         try:
-            confirmation = self.store.confirm(self._scoring_study[0], entry_id, user.id)
+            existing = self.store.confirmation(uid)
+        except StoreError as exc:
+            self._failed(f"Reference NOT CONFIRMED: {exc}")
+            return None
+        if existing is not None and existing.entry_id != entry_id and not self._confirm(
+                f"This case already has a reference score ({existing.total:g}, confirmed by "
+                f"{existing.confirmed_by.name}). Replace it?"):
+            return None
+        try:
+            confirmation = self.store.confirm(uid, entry_id, user.id)
         except (PermissionError, ValueError) as exc:
             self._say(str(exc))
+            return None
+        except StoreError as exc:
+            self._failed(f"Reference NOT CONFIRMED: {exc}")
             return None
         self._say(f"Confirmed as the reference score: {confirmation.total:g} ({confirmation.group}).")
         self.refresh_entries()
@@ -284,7 +417,20 @@ class MainWindow(QMainWindow):
         if item is None:
             self._say("Select a saved score in the list first.")
             return None
+        user = self.current_user()
+        if user is not None and item.data(LABEL_ROLE) == user.id and self._dirty():
+            self._say("Save your changes before confirming your own score "
+                      "(the saved version is what would be confirmed).")
+            return None
         return self.confirm_entry(item.data(PATH_ROLE))
+
+    def closeEvent(self, event) -> None:
+        if self._dirty() and not self._confirm("You have unsaved changes to a score. Close anyway?"):
+            event.ignore()
+            return
+        if self.store is not None:
+            self.store.close()
+        event.accept()
 
     def show_disagreements(self) -> str:
         if self.store is None:
@@ -326,7 +472,12 @@ class MainWindow(QMainWindow):
                 continue
         # Cine series are the primary data, so they come before stills within each folder.
         rows.sort(key=lambda r: (r[0].label.lower(), r[1].kind != "cine", r[0].path.name))
-        scored = {uid for uid, _n, confirmed in self.store.case_summaries() if confirmed} if self.store else set()
+        scored: set[str] = set()
+        if self.store is not None:
+            try:
+                scored = {uid for uid, _n, confirmed in self.store.case_summaries() if confirmed}
+            except StoreError as exc:
+                self._say(str(exc))
         self.item_list.blockSignals(True)
         self.item_list.clear()
         for e, h in rows:
@@ -425,6 +576,25 @@ class MainWindow(QMainWindow):
             self.statusBar().clearMessage()
         self._shown_uid = path.stem
         self.cine.set_series(s, label_view(s.primary_angle, s.secondary_angle))
+        self._maybe_follow_selection()
+
+    def _maybe_follow_selection(self) -> None:
+        """When the scoring panel is open and the selected series belongs to another study, switch
+        the form to it if nothing is unsaved; otherwise say clearly which case is still open."""
+        if (self.store is None or self._scoring_study is None or self.scoring_dock.isHidden()
+                or self.current_user() is None):
+            return
+        try:
+            study = self._selected_study()
+        except ImportRejected:
+            return
+        if study is None or study == self._scoring_study:
+            return
+        if self._dirty():
+            self._say("Scoring is still open on a different case (see the Scoring panel title). "
+                      "Save it, then click Score case to switch.")
+        else:
+            self.score_selected_case()
 
     # ---- import dialogs ----
     def _report(self, result: ImportResult) -> None:
@@ -457,6 +627,7 @@ def main() -> None:
     win = MainWindow(Path.home() / "MUSSA-data")
     win.resize(1000, 700)
     win.show()
+    QTimer.singleShot(0, win.announce_startup_problems)
     sys.exit(app.exec())
 
 

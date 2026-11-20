@@ -25,7 +25,7 @@ def disagreement_report(store: CaseStore) -> list[LevelStats]:
             continue
         ref = store.confirmation(study_uid)
         for entry in store.entries(study_uid):
-            if entry.id == ref.entry_id or entry.status != "complete":
+            if entry.id == ref.entry_id or entry.status != "complete" or entry.total is None:
                 continue
             diffs[entry.user.level].append((abs(entry.total - ref.total), entry.group == ref.group))
     rows = []

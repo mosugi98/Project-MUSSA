@@ -37,14 +37,23 @@ A case is one study. Select any series of the study, then click **Score case**.
 5. Read the result box: the total and risk group, the points for each lesion, or what is still
    missing. A case with missing answers has no score.
 
-Click **Save score** to keep your entry. You can save an unfinished score as a draft and come back
+The title of the Scoring panel names the case that is open (folder, study date and the last digits
+of the case id). If you select a series of a different study, the panel switches to that case only
+when nothing is unsaved; otherwise it keeps the open case and the status bar tells you, so a score
+can never be saved to the wrong case by accident. MUSSA also asks before it discards unsaved edits
+(when you switch scorer, open another case or close the window).
+
+Click **Save score** to keep your entry. If saving fails (for example the file is locked or the disk
+is full) you get a warning dialog and the status bar says NOT SAVED; nothing is changed. You can save an unfinished score as a draft and come back
 to it; saving again updates your entry.
 
 ## 4. Confirm a reference score (cardiologists)
 
 Every saved score for the case is listed under "Scores saved for this case". Select one and click
 **Confirm selected entry as reference**. The series of that case are then marked `[scored]`.
-Only complete scores can be confirmed. Later edits do not change the confirmed reference.
+Only complete scores can be confirmed. Later edits do not change the confirmed reference: the
+"Reference score" line always shows the confirmed snapshot, and a row that was edited afterwards is
+marked. Replacing an existing reference asks first.
 
 ## 5. Disagreements
 

@@ -158,3 +158,39 @@ def test_database_bytes_hold_no_patient_identifiers(store, tmp_path):
     raw = (tmp_path / "data" / "cases.sqlite").read_bytes()
     for needle in (b"DOE", b"JOHN", b"MRN12345"):
         assert needle not in raw
+
+
+def test_database_errors_after_opening_become_store_errors(tmp_path):
+    p = tmp_path / "cases.sqlite"
+    s = CaseStore(p, timeout=0.2)
+    u = s.add_user("Ana", "resident")
+    s.ensure_case(UID, "h")
+    other = sqlite3.connect(p)
+    other.execute("BEGIN EXCLUSIVE")
+    f, r = complete()
+    try:
+        with pytest.raises(StoreError, match="locked"):
+            s.save_entry(UID, u.id, f, r)
+    finally:
+        other.rollback()
+        other.close()
+        s.close()
+
+
+def test_file_claiming_schema_1_but_without_tables_is_refused(tmp_path):
+    p = tmp_path / "cases.sqlite"
+    con = sqlite3.connect(p)
+    con.execute("PRAGMA user_version = 1")
+    con.commit()
+    con.close()
+    with pytest.raises(StoreError, match="cases.sqlite"):
+        CaseStore(p)
+
+
+def test_a_complete_result_without_a_total_is_rejected(store):
+    from cagsyntax.scoring import CaseResult
+    u = store.add_user("Ana", "resident")
+    bad = CaseResult(status="complete", issues=[], total=None, group=None, dominance="right",
+                     scoring_dominance="right", lesions=[])
+    with pytest.raises(ValueError):
+        store.save_entry(UID, u.id, {}, bad)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -64,6 +65,17 @@ CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 
+def _guarded(fn):
+    """Turn sqlite errors (locked file, full disk, damaged file) into a clear StoreError."""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except sqlite3.Error as exc:
+            raise StoreError(f"{self.path.name}: {exc}. Nothing was changed.") from exc
+    return wrapper
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
@@ -72,32 +84,43 @@ class CaseStore:
     """SQLite store of scorers, cases (studies), one entry per scorer and case, and the
     confirmed reference snapshot of each case. Holds no direct patient identifiers."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, timeout: float = 5.0):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._con = None
         try:
-            self._con = sqlite3.connect(self.path)
+            self._con = sqlite3.connect(self.path, timeout=timeout)
             self._con.execute("PRAGMA foreign_keys = ON")
             version = self._con.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
-                self._con.close()
                 raise StoreError(f"{self.path.name} was written by a newer version of MUSSA "
                                  f"(schema {version}); update the app to open it.")
             if version == 0:
                 with self._con:
                     self._con.executescript(_SCHEMA)
                     self._con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            elif self._con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entries'"
+                                   ).fetchone() is None:
+                raise StoreError(f"{self.path.name} is damaged (its tables are missing); "
+                                 f"it was not changed.")
         except sqlite3.DatabaseError as exc:
+            self.close()
             raise StoreError(f"Cannot open {self.path.name}: {exc}. The file may be damaged; "
                              f"it was not changed.") from exc
+        except StoreError:
+            self.close()
+            raise
 
     def close(self) -> None:
-        self._con.close()
+        if self._con is not None:
+            self._con.close()
+            self._con = None
 
     # ---- users ----
     def _user(self, row) -> User:
         return User(id=row[0], name=row[1], level=row[2])
 
+    @_guarded
     def add_user(self, name: str, level: str) -> User:
         name = name.strip()
         if not name:
@@ -112,10 +135,12 @@ class CaseStore:
             raise ValueError(f"A scorer named {name!r} already exists.") from exc
         return User(cur.lastrowid, name, level)
 
+    @_guarded
     def users(self) -> list[User]:
         rows = self._con.execute("SELECT id, name, level FROM users ORDER BY name_key").fetchall()
         return [self._user(r) for r in rows]
 
+    @_guarded
     def _get_user(self, user_id: int) -> User:
         row = self._con.execute("SELECT id, name, level FROM users WHERE id=?", (user_id,)).fetchone()
         if row is None:
@@ -123,12 +148,16 @@ class CaseStore:
         return self._user(row)
 
     # ---- cases and entries ----
+    @_guarded
     def ensure_case(self, study_uid: str, mrn_hash: str) -> None:
         with self._con:
             self._con.execute("INSERT OR IGNORE INTO cases(study_uid, mrn_hash) VALUES (?,?)",
                               (study_uid, mrn_hash))
 
+    @_guarded
     def save_entry(self, study_uid: str, user_id: int, form: dict, result: CaseResult) -> Entry:
+        if result.status == "complete" and result.total is None:
+            raise ValueError("A complete score must have a total.")
         self._get_user(user_id)
         try:
             with self._con:
@@ -145,6 +174,7 @@ class CaseStore:
             raise ValueError(f"Unknown case {study_uid!r}.") from exc
         return next(e for e in self.entries(study_uid) if e.user.id == user_id)
 
+    @_guarded
     def entries(self, study_uid: str) -> list[Entry]:
         rows = self._con.execute(
             "SELECT e.id, e.study_uid, u.id, u.name, u.level, e.form_json, e.status, e.total, e.grp, "
@@ -154,6 +184,7 @@ class CaseStore:
                 for r in rows]
 
     # ---- confirmation ----
+    @_guarded
     def confirm(self, study_uid: str, entry_id: int, user_id: int) -> Confirmation:
         user = self._get_user(user_id)
         if user.level != "cardiologist":
@@ -171,6 +202,7 @@ class CaseStore:
                  entry.total, entry.group))
         return self.confirmation(study_uid)
 
+    @_guarded
     def confirmation(self, study_uid: str) -> Confirmation | None:
         row = self._con.execute(
             "SELECT c.entry_id, u.id, u.name, u.level, c.confirmed_at, c.form_json, c.status, c.total, "
@@ -181,6 +213,7 @@ class CaseStore:
         return Confirmation(row[0], User(row[1], row[2], row[3]), row[4], json.loads(row[5]), row[6],
                             row[7], row[8])
 
+    @_guarded
     def case_summaries(self) -> list[tuple[str, int, bool]]:
         rows = self._con.execute(
             "SELECT c.study_uid, (SELECT COUNT(*) FROM entries e WHERE e.study_uid=c.study_uid), "
@@ -189,10 +222,12 @@ class CaseStore:
         return [(r[0], r[1], bool(r[2])) for r in rows]
 
     # ---- small settings ----
+    @_guarded
     def get_meta(self, key: str) -> str | None:
         row = self._con.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
         return row[0] if row else None
 
+    @_guarded
     def set_meta(self, key: str, value: str) -> None:
         with self._con:
             self._con.execute("INSERT INTO meta(key, value) VALUES (?,?) "

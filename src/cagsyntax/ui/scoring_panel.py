@@ -61,13 +61,19 @@ class ScoringPanel(QWidget):
     def case(self) -> Case:
         return case_from_json(case_to_json(self._case))
 
-    def set_case(self, case: Case) -> None:
-        self._case = case_from_json(case_to_json(case))
-        dom = self._dom()
-        self._case.lesions = [clean_lesion(les, dom) for les in self._case.lesions]
+    def set_case(self, case: Case) -> list[str]:
+        """Load a case. Segments that do not exist for its dominance (or at all) are dropped and
+        reported; every lesion is cleaned. Returns the dropped segments."""
+        loaded = case_from_json(case_to_json(case))
+        pruned = change_dominance(loaded, loaded.dominance, loaded.scoring_dominance)
+        removed = removed_segments(loaded, pruned)
+        self._case = pruned
         self._current = 0 if self._case.lesions else -1
-        self._notice = ""
+        dom = self._dom()
+        self._notice = (f"Removed segments that do not exist for {dom or 'this'} dominance: "
+                        f"{', '.join(removed)}." if removed else "")
         self._sync()
+        return removed
 
     def result(self) -> CaseResult:
         return score_case(self._case)
@@ -96,6 +102,8 @@ class ScoringPanel(QWidget):
         if not 0 <= index < len(self._case.lesions):
             return
         del self._case.lesions[index]
+        if index < self._current:
+            self._current -= 1
         self._current = min(self._current, len(self._case.lesions) - 1)
         self._sync()
 

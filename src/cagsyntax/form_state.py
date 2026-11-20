@@ -10,7 +10,7 @@ import dataclasses
 import json
 
 from .scoring import Case, Lesion
-from .scoring.tables import MEDINA, OSTIAL_SEGMENTS, weight
+from .scoring.tables import MEDINA, OSTIAL_SEGMENTS, SEGMENT_IDS, weight
 from .scoring.validate import beyond_asked, beyond_options, tri_bif_asked
 
 ALWAYS = {"occlusion", "severe_tortuosity", "heavy_calcification", "thrombus"}
@@ -26,7 +26,7 @@ def applicable_questions(lesion: Lesion, dominance: str | None) -> set[str]:
     if lesion.occlusion is True:
         qs |= {"first_segment", "age_over_3_months", "blunt_stump", "bridging", "side_branch"}
         main = lesion.first_segment
-        if dominance and main in lesion.segments and beyond_asked(main, dominance):
+        if dominance and main in lesion.segments and main in SEGMENT_IDS and beyond_asked(main, dominance):
             qs.add("beyond_first_visualized")
     if lesion.occlusion is False:
         qs.add("length_gt20")
@@ -47,6 +47,7 @@ def clean_lesion(lesion: Lesion, dominance: str | None) -> Lesion:
     if les.first_segment is not None and les.first_segment not in les.segments:
         les.first_segment = None
     if (les.beyond_first_visualized is not None and dominance and les.first_segment in les.segments
+            and les.first_segment in SEGMENT_IDS
             and les.beyond_first_visualized not in beyond_options(les.first_segment, dominance)):
         les.beyond_first_visualized = None
     # Clearing can switch other questions off, so repeat until nothing changes.

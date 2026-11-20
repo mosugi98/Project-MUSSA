@@ -157,3 +157,10 @@ def test_json_round_trip():
 def test_malformed_json_raises_value_error(text):
     with pytest.raises(ValueError):
         case_from_json(text)
+
+
+def test_unknown_first_segment_never_raises():
+    les = Lesion(segments=["99"], occlusion=True, first_segment="99", beyond_first_visualized="3")
+    assert "beyond_first_visualized" not in applicable_questions(les, "right")
+    cleaned = clean_lesion(les, "right")
+    assert cleaned.beyond_first_visualized is None
