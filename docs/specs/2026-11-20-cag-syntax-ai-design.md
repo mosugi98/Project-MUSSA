@@ -73,6 +73,11 @@ Five independent units. Each communicates only through the interfaces shown.
 - One record per case. Multiple scorer entries per case. One confirmed entry per case, set by a cardiologist.
 - Disagreement tracking: the app reports how often scorers differ from the confirmed version, per scorer level.
 - Export: confirmed cases as a dataset (de-identified image references plus form data and score) for Phase B. Cine series only by default; stills are excluded unless the user asks for them.
+- **Case (decided):** a case is one imported study, identified by the (remapped) study UID of its stored series. All series of a study belong to one case. Cases and scores are kept in `cases.sqlite` next to the image store and do not depend on the viewer list: deleting and re-importing series keeps the scores.
+- **Scorers (decided):** named profiles (name and level, resident or cardiologist) are kept in the case store. The app asks for a scorer before scoring and remembers the last one. There is no password; access control is the Windows account on the hospital machine (section 7). Only a cardiologist can confirm.
+- **Entries (decided):** each scorer has one entry per case, updated in place with a new timestamp. Incomplete or invalid entries can be saved as drafts, but only a complete entry can be confirmed. Confirming stores a snapshot of the entry, so later edits do not change the reference.
+- **Disagreement (decided):** measured on the final total and group against the confirmed snapshot, per scorer level, excluding the confirmed entry itself, incomplete entries and cases without a confirmation. Two scorers who reach the same total through different lesions count as agreeing; a per-lesion or per-segment comparison is left for a later step.
+- **Form (decided):** one segment picker (a schematic tree, not an anatomical drawing), one control per applicable question, and the engine's live result. Answers that stop applying (for example trifurcation after the side branch is changed to under 1.5 mm) are cleared automatically; segments that do not exist for a new dominance are removed and the scorer is told which. There is no free-text comment field, because free text invites patient identifiers. The form always shows that this is an educational tool, not a certified medical device.
 
 ## 6. Phase B: AI suggestions
 
