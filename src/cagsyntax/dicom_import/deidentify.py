@@ -34,6 +34,10 @@ UID_KEYWORDS = {"StudyInstanceUID", "SeriesInstanceUID", "SOPInstanceUID", "Fram
 META_REMOVE = ["SourceApplicationEntityTitle", "SendingApplicationEntityTitle",
                "ReceivingApplicationEntityTitle", "PrivateInformation", "PrivateInformationCreatorUID"]
 # Values of these types are never compared in the leak scan (times, dates, numbers, UIDs).
+# Only these carry a person's identity; other stripped fields (study ID, station, institution,
+# comments) are labels that may legitimately recur in descriptions, so they are not leak-scanned.
+SCAN_SOURCE_KEYWORDS = {"PatientID", "OtherPatientIDs", "AccessionNumber", "MedicalRecordLocator",
+                        "PatientAddress", "PatientTelephoneNumbers", "RequestedProcedureID"}
 SCAN_SKIP_VR = {"UI", "DA", "TM", "DT", "DS", "IS", "FD", "FL", "SL", "SS", "UL", "US", "OB", "OW", "SQ"}
 
 
@@ -92,14 +96,14 @@ def deidentify(ds: pydicom.Dataset, salt: bytes) -> tuple[pydicom.Dataset, str, 
 
 
 def identifier_strings(ds: pydicom.Dataset) -> list[str]:
-    """Uppercase strings that must not survive in stored output: every value of every
-    element that de-identification blanks or removes (at any depth), plus the MRN.
-    Person names are split into parts. Strings shorter than 3 characters are skipped."""
+    """Uppercase strings that must not survive in stored output: person names (split into
+    parts), patient IDs, accession numbers and similar identifiers, at any depth.
+    Strings shorter than 3 characters are skipped."""
     found: set[str] = set()
 
     def collect(_dataset, elem):
-        if elem.VR == "SQ" or not (elem.keyword in BLANK or elem.keyword in REMOVE
-                                   or elem.keyword == "PatientID"):
+        is_person_name = elem.VR == "PN" and (elem.keyword in BLANK or elem.keyword in REMOVE)
+        if elem.VR == "SQ" or not (is_person_name or elem.keyword in SCAN_SOURCE_KEYWORDS):
             return
         values = elem.value if isinstance(elem.value, (list, pydicom.multival.MultiValue)) else [elem.value]
         for v in values:

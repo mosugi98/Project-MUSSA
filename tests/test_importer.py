@@ -168,3 +168,15 @@ def test_failed_deid_check_names_the_leaking_tag_and_stores_nothing(tmp_path):
     r = import_path(src, store, SALT)
     assert r.imported == [] and "SeriesDescription" in r.rejected[0][1]
     assert not store.exists() or list(store.glob("*")) == []
+
+
+def test_procedure_code_in_study_id_matching_a_description_is_not_a_leak(tmp_path):
+    (tmp_path / "in").mkdir()
+
+    def add(ds):
+        ds.StudyID = "PPCI"
+        ds.StationName = "CATHLAB"
+        ds.SeriesDescription = "PPCI CATHLAB"
+
+    src = edit(make_xa(tmp_path / "in" / "a.dcm"), add)
+    assert len(import_path(src, tmp_path / "store", SALT).imported) == 1

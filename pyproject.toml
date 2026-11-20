@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cagsyntax"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["pydicom>=2.4", "numpy", "PySide6"]
+dependencies = ["pydicom>=2.4", "numpy", "PySide6", "pylibjpeg", "pylibjpeg-libjpeg"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
