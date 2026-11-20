@@ -44,9 +44,10 @@ def test_confirmed_case_is_exported_with_reference_series_and_split(world):
     assert c.reference["total"] == 5.0 and c.reference["group"] == "low"
     assert c.reference["dominance"] == "right" and c.reference["diffuse_segments"] == []
     assert c.reference["form"]["lesions"][0]["segments"] == ["7"]
-    [les] = c.reference["lesions"]
+    assert c.reference["lesions"] == [{"segments": ["7"]}]              # the confirmed form only
+    [les] = c.rescored["lesions"]                                       # breakdown by the current engine
     assert les["segments"] == ["7"] and sum(p["points"] for p in les["parts"]) == les["total"] == 5.0
-    assert c.rescored == {"total": 5.0, "group": "low", "consistent": True}
+    assert (c.rescored["total"], c.rescored["group"], c.rescored["consistent"], c.rescored["diffuse_points"]) == (5.0, "low", True, 0)
     assert [s.kind for s in c.series] == ["cine", "cine"]                # stills excluded by default
     assert (ds.engine_source, ds.engine_version) == (SOURCE, VERSION) and ds.include_stills is False
 

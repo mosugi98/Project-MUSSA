@@ -89,6 +89,11 @@ you name: `dataset.json`, `cases.csv`, `series.csv` and a `README.txt`. It asks 
   but moving that folder breaks them). Yes copies the images into an `images` folder with a checksum for
   each.
 
+While images are being copied a progress box appears with a **Cancel** button; cancelling leaves nothing
+behind. Copied images keep only a short list of DICOM fields (the anonymous IDs, study date, pixels, cine
+timing and C-arm angles); descriptions, protocol names, patient sex and age and times are removed. The
+README counts series that may have patient text burned into the image: look at those before sharing.
+
 The export never contains scorer names, your folder names, original IDs, MRNs or file paths. It never
 overwrites an existing folder: pick a new name. If the current scoring engine disagrees with a confirmed
 reference, the case is still exported as confirmed and flagged in the README. The format is described in

@@ -15,7 +15,7 @@ from tests.test_export_dataset import STUDY_A, STUDY_B
 CASE_COLUMNS = ["case_id", "patient_key", "suggested_split", "reference_total", "reference_group",
                 "dominance", "scoring_dominance", "n_lesions", "n_series", "n_cines",
                 "consistent_with_engine"]
-SERIES_COLUMNS = ["case_id", "series_id", "kind", "view", "frames", "path"]
+SERIES_COLUMNS = ["case_id", "series_id", "kind", "view", "frames", "burned_in_unclear", "path"]
 
 
 def export(world, out_name="out", copy_images=False, include_stills=False, confirm_b=False):
@@ -48,7 +48,8 @@ def test_files_columns_and_counts(world):
     assert data["format_version"] == 1 and data["engine"]["version"] and data["engine"]["source"].startswith("https://")
     assert data["options"] == {"include_stills": False, "images_copied": False}
     assert "not a certified medical device" in data["notice"].lower()
-    assert data["counts"] == {"cases": 2, "series": 3, "excluded": 0, "inconsistent": 0}
+    assert data["counts"] == {"cases": 2, "series": 3, "excluded": 0, "inconsistent": 0,
+                              "burned_in_unclear": 0, "without_patient_key": 0}
     assert len(data["cases"]) == 2 and data["excluded"] == []
     first = data["cases"][0]
     assert {"case_id", "patient_key", "suggested_split", "confirmed_at", "confirmed_by_level", "reference",
@@ -108,7 +109,9 @@ def test_an_existing_empty_folder_is_accepted(world):
     assert (tmp / "out" / "dataset.json").exists()
 
 
-def test_copied_images_are_byte_identical_with_matching_checksums(world):
+def test_copied_images_keep_their_pixels_and_have_matching_checksums(world):
+    import numpy as np
+    import pydicom
     result, out, ds = export(world, copy_images=True)
     lib = world[0]
     data = json.loads((out / "dataset.json").read_text(encoding="utf-8"))
@@ -116,10 +119,11 @@ def test_copied_images_are_byte_identical_with_matching_checksums(world):
     for s in data["cases"][0]["series"]:
         copied = out / s["path"]
         assert s["path"] == f"images/{s['series_id']}.dcm" and copied.exists()
-        original = lib.store_dir / f"{s['series_id']}.dcm"
-        assert copied.read_bytes() == original.read_bytes()
+        original = pydicom.dcmread(lib.store_dir / f"{s['series_id']}.dcm")
+        again = pydicom.dcmread(copied)
+        assert np.array_equal(again.pixel_array, original.pixel_array)
         assert s["sha256"] == hashlib.sha256(copied.read_bytes()).hexdigest()
-    assert {r[5] for r in read_csv(out / "series.csv")[1:]} == {f"images/{s['series_id']}.dcm" for s in data["cases"][0]["series"]}
+    assert {r[6] for r in read_csv(out / "series.csv")[1:]} == {f"images/{s['series_id']}.dcm" for s in data["cases"][0]["series"]}
 
 
 def test_without_copying_no_images_folder_exists(world):

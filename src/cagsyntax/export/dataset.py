@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -19,17 +20,18 @@ class ExportSeries:
     frames: int
     study_date: str
     store_file: str       # "store/<series_id>.dcm", relative to the app's data folder
+    burned_in_unclear: bool = False   # patient text may be burned into the pixels
 
 
 @dataclass
 class ExportCase:
     case_id: str                  # remapped study uid
-    patient_key: str              # salted MRN hash: keeps all cases of one patient together
-    suggested_split: str          # "train" | "val" | "test", from the patient key
-    confirmed_at: str
+    patient_key: str | None       # salted MRN hash; None when the file had no MRN
+    suggested_split: str          # "train" | "val" | "test"
+    confirmed_at: str             # date only
     confirmed_by_level: str       # the level only, never the scorer's name
-    reference: dict               # the confirmed snapshot and its breakdown
-    rescored: dict                # the current engine on the same form: total, group, consistent
+    reference: dict               # the confirmed snapshot only
+    rescored: dict                # the CURRENT engine on the same form: total, group, consistent, breakdown
     series: list[ExportSeries] = field(default_factory=list)
 
 
@@ -41,7 +43,7 @@ class Exclusion:
 
 @dataclass
 class ExportDataset:
-    created: str
+    created: str                  # date only
     engine_source: str
     engine_version: str
     include_stills: bool
@@ -63,34 +65,42 @@ def series_by_study(library: Library) -> dict[str, list[ExportSeries]]:
             continue
         groups.setdefault(h.study_uid, []).append(ExportSeries(
             series_id=entry.uid, kind=h.kind, view=h.view_label, frames=h.frame_count,
-            study_date=h.study_date, store_file=f"store/{entry.uid}.dcm"))
+            study_date=h.study_date, store_file=f"store/{entry.uid}.dcm",
+            burned_in_unclear=h.burned_in_unclear))
     for series in groups.values():
         series.sort(key=lambda s: (s.kind != "cine", s.series_id))
     return groups
 
 
-def _reference(confirmation, case: Case, result) -> dict:
-    complete = result.status == "complete"
-    lesions = []
-    for i, les in enumerate(case.lesions):
-        lr = result.lesions[i] if complete else None
-        lesions.append({
-            "segments": list(les.segments),
-            "total": lr.total if lr else None,
-            "parts": [{"label": p.label, "points": p.points} for p in lr.parts] if lr else [],
-        })
+def _reference(confirmation, case: Case) -> dict:
+    """What was confirmed, and nothing the current engine says about it."""
     return {
-        "total": confirmation.total, "group": confirmation.group,
-        "dominance": case.dominance,
-        "scoring_dominance": case.scoring_dominance or (case.dominance if case.dominance in ("right", "left") else None),
-        "lesions": lesions, "diffuse_segments": list(case.diffuse_segments), "form": confirmation.form,
+        "total": confirmation.total, "group": confirmation.group, "dominance": case.dominance,
+        "scoring_dominance": case.scoring_dominance
+        or (case.dominance if case.dominance in ("right", "left") else None),
+        "lesions": [{"segments": list(les.segments)} for les in case.lesions],
+        "diffuse_segments": list(case.diffuse_segments),
+        "form": dataclasses.asdict(case),         # normalised: only the known form fields
+    }
+
+
+def _rescored(confirmation, case: Case, result) -> dict:
+    """The current engine on the confirmed form. Matches the reference only when `consistent`."""
+    complete = result.status == "complete"
+    return {
+        "total": result.total, "group": result.group,
+        "consistent": complete and result.total == confirmation.total and result.group == confirmation.group,
+        "diffuse_points": result.diffuse_points if complete else None,
+        "lesions": [{"segments": list(les.segments), "total": lr.total,
+                     "parts": [{"label": p.label, "points": p.points} for p in lr.parts]}
+                    for les, lr in zip(case.lesions, result.lesions)] if complete else [],
     }
 
 
 def build_dataset(store: CaseStore, library: Library, include_stills: bool = False) -> ExportDataset:
     """Every confirmed case with its reference, a re-score by the current engine and its series.
     Cases that cannot be exported are listed in `excluded` with a reason."""
-    dataset = ExportDataset(created=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    dataset = ExportDataset(created=datetime.now(timezone.utc).date().isoformat(),
                             engine_source=SOURCE, engine_version=VERSION, include_stills=include_stills)
     groups = series_by_study(library)
     for confirmed in store.confirmed_cases():
@@ -105,15 +115,18 @@ def build_dataset(store: CaseStore, library: Library, include_stills: bool = Fal
             continue
         try:
             case = Case.from_dict(conf.form)
-        except (KeyError, TypeError, ValueError):
+            result = score_case(case)
+            reference = _reference(conf, case)
+            rescored = _rescored(conf, case, result)
+        except (KeyError, TypeError, ValueError, AttributeError):
             dataset.excluded.append(Exclusion(uid, "the confirmed form could not be read"))
             continue
-        result = score_case(case)
-        rescored = {"total": result.total, "group": result.group,
-                    "consistent": result.status == "complete" and result.total == conf.total
-                    and result.group == conf.group}
+        patient_key = confirmed.mrn_hash or None
         dataset.cases.append(ExportCase(
-            case_id=uid, patient_key=confirmed.mrn_hash, suggested_split=suggest_split(confirmed.mrn_hash),
-            confirmed_at=conf.confirmed_at, confirmed_by_level=conf.confirmed_by.level,
-            reference=_reference(conf, case, result), rescored=rescored, series=chosen))
+            case_id=uid, patient_key=patient_key,
+            # A case without an MRN is its own "patient": it must not share a split with every
+            # other MRN-less case just because they share an empty key.
+            suggested_split=suggest_split(patient_key or uid),
+            confirmed_at=conf.confirmed_at[:10], confirmed_by_level=conf.confirmed_by.level,
+            reference=reference, rescored=rescored, series=chosen))
     return dataset

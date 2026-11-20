@@ -10,7 +10,8 @@ from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QListWidget, QListWidgetItem, QMainWindow,
-                               QMessageBox, QPushButton, QSplitter, QVBoxLayout, QWidget)
+                               QMessageBox, QProgressDialog, QPushButton, QSplitter, QVBoxLayout,
+                               QWidget)
 
 from .cases import study_of
 from .dicom_import.deidentify import get_or_create_salt
@@ -19,7 +20,7 @@ from .dicom_import.models import ImportRejected, ImportResult
 from .dicom_import.reader import read_header, read_xa
 from .dicom_import.views import label_view
 from .export.dataset import build_dataset
-from .export.writer import ExportResult, write_export
+from .export.writer import ExportCancelled, ExportResult, write_export
 from .form_state import case_from_json, case_to_json
 from .library import DEFAULT_LABEL, Library
 from .report import disagreement_report
@@ -93,6 +94,9 @@ def format_export_summary(result: ExportResult) -> str:
         lines.append(f"{result.images_copied} de-identified image(s) were copied into the export.")
     if result.excluded:
         lines.append(f"{result.excluded} case(s) were not exported (the reasons are in README.txt).")
+    if result.burned_in_unclear:
+        lines.append(f"{result.burned_in_unclear} series may contain burned-in patient text in the pixels: "
+                     "check those images before sharing (see README.txt).")
     if result.inconsistent:
         lines.append(f"{result.inconsistent} case(s) where the current engine's total differs from the "
                      "confirmed reference (see README.txt).")
@@ -556,7 +560,7 @@ class MainWindow(QMainWindow):
 
     # ---- export ----
     def export_confirmed_cases(self, out_dir: Path, include_stills: bool = False,
-                               copy_images: bool = False) -> ExportResult | None:
+                               copy_images: bool = False, progress=None) -> ExportResult | None:
         """Export every confirmed case as a de-identified dataset folder. Returns None, with a
         message, if nothing could be exported."""
         if self.store is None:
@@ -574,7 +578,10 @@ class MainWindow(QMainWindow):
             self._say("There are no confirmed cases to export. Confirm a reference score first." + note)
             return None
         try:
-            result = write_export(dataset, self.library, Path(out_dir), copy_images)
+            result = write_export(dataset, self.library, Path(out_dir), copy_images, progress)
+        except ExportCancelled:
+            self._say("Export cancelled; nothing was written.")
+            return None
         except FileExistsError as exc:
             self._failed(f"Nothing was exported: {exc}")
             return None
@@ -583,6 +590,16 @@ class MainWindow(QMainWindow):
             return None
         self._say(f"Exported {result.cases} case(s), {result.series} series to {result.folder}")
         return result
+
+    def _ask_yes_no_cancel(self, text: str) -> bool | None:
+        """Yes -> True, No -> False, Cancel (or closing the box) -> None."""
+        answer = QMessageBox.question(
+            self, "Export dataset", text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            return True
+        return False if answer == QMessageBox.StandardButton.No else None
 
     def _ask_export(self) -> None:
         if self.store is None:
@@ -596,11 +613,34 @@ class MainWindow(QMainWindow):
         name = Path(name.strip()).name if ok else ""
         if not name:
             return
-        stills = self._confirm("Include still images?\n\n(Cine series are always included.)")
-        copy = self._confirm("Copy the de-identified images into the export folder?\n\n"
-                             "No keeps paths into MUSSA's data folder (smaller, but moving that folder "
-                             "breaks them).")
-        result = self.export_confirmed_cases(Path(parent) / name, stills, copy)
+        target = Path(parent) / name
+        if target.exists() and (not target.is_dir() or any(target.iterdir())):
+            self._failed(f"Nothing was exported: {target} already exists and is not empty; "
+                         "choose a new folder name.")
+            return
+        stills = self._ask_yes_no_cancel("Include still images?\n\n(Cine series are always included.)")
+        if stills is None:
+            return
+        copy = self._ask_yes_no_cancel(
+            "Copy the de-identified images into the export folder?\n\n"
+            "No keeps paths into MUSSA's data folder (smaller, but moving that folder breaks them).")
+        if copy is None:
+            return
+        dialog: list[QProgressDialog] = []
+
+        def progress(done: int, total: int) -> bool:
+            if not dialog:
+                box = QProgressDialog("Copying de-identified images...", "Cancel", 0, total, self)
+                box.setWindowModality(Qt.WindowModality.WindowModal)
+                box.setMinimumDuration(0)
+                dialog.append(box)
+            dialog[0].setValue(done)
+            QApplication.processEvents()          # keeps the window responsive and Cancel clickable
+            return not dialog[0].wasCanceled()
+
+        result = self.export_confirmed_cases(target, stills, copy, progress if copy else None)
+        if dialog:
+            dialog[0].close()
         if result is not None:
             QMessageBox.information(self, "Export finished", format_export_summary(result))
 
