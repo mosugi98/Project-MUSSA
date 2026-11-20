@@ -48,3 +48,18 @@ def test_rejects_compressed_without_decoder(tmp_path):
     ds.save_as(p)
     with pytest.raises(ImportRejected, match="cannot decode"):
         read_xa(p)
+
+
+def test_read_header_does_not_decode_pixels(tmp_path):
+    from cagsyntax.dicom_import.reader import read_header
+    p = make_xa(tmp_path / "c.dcm", primary=-20.0, secondary=10.0)
+    ds = pydicom.dcmread(p)
+    ds.file_meta.TransferSyntaxUID = JPEGLosslessSV1
+    ds.PixelData = encapsulate([bytes(64)] * 5)  # undecodable, header must still read
+    ds["PixelData"].is_undefined_length = True
+    ds.save_as(p)
+    h = read_header(p)
+    assert h.view_label == "RAO 20 CRAN 10"
+    assert h.series_description == "LAD cine"
+    assert h.study_date == "20261120"
+    assert h.burned_in_unclear is False  # factory file states BurnedInAnnotation = NO

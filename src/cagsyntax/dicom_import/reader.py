@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pydicom
 
-from .models import ImportRejected, XASeries
+from .models import ImportRejected, SeriesHeader, XASeries
+from .views import label_view
 
 XA_SOP_CLASSES = {
     "1.2.840.10008.5.1.4.1.1.12.1",    # X-Ray Angiographic Image Storage
@@ -52,3 +53,18 @@ def read_xa(path: Path) -> XASeries:
         primary_angle=_float_or_none(ds, "PositionerPrimaryAngle"),
         secondary_angle=_float_or_none(ds, "PositionerSecondaryAngle"),
         sop_instance_uid=str(ds.SOPInstanceUID), source=path)
+
+
+def read_header(path: Path) -> SeriesHeader:
+    """Fast: reads tags only, never decodes pixel data."""
+    path = Path(path)
+    try:
+        ds = pydicom.dcmread(path, stop_before_pixels=True)
+    except Exception as exc:
+        raise ImportRejected(f"{path.name}: not a valid DICOM file ({exc})") from exc
+    return SeriesHeader(
+        view_label=label_view(_float_or_none(ds, "PositionerPrimaryAngle"),
+                              _float_or_none(ds, "PositionerSecondaryAngle")),
+        series_description=str(ds.get("SeriesDescription", "")),
+        study_date=str(ds.get("StudyDate", "")),
+        burned_in_unclear=str(ds.get("BurnedInAnnotation", "")).upper() != "NO")

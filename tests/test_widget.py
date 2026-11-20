@@ -81,3 +81,42 @@ def test_burned_in_flag_shows_on_row_and_survives_restart(qapp, tmp_path):
     reopened = MainWindow(tmp_path / "data")
     texts = [reopened.item_list.item(i).text() for i in range(reopened.item_list.count())]
     assert sum("check burned-in text" in t for t in texts) == 1
+
+
+def test_startup_lists_stored_series_without_decoding_pixels(qapp, tmp_path, monkeypatch):
+    src = tmp_path / "in"
+    src.mkdir()
+    make_xa(src / "a.dcm", burned_in=True)
+    make_xa(src / "b.dcm", primary=-20.0, secondary=10.0)
+    MainWindow(tmp_path / "data").import_from(src)
+
+    def no_decode(*a, **k):
+        raise AssertionError("startup must not decode pixel data")
+
+    monkeypatch.setattr("cagsyntax.app.read_xa", no_decode)
+    reopened = MainWindow(tmp_path / "data")
+    texts = [reopened.item_list.item(i).text() for i in range(reopened.item_list.count())]
+    assert len(texts) == 2
+    assert any("RAO 20 CRAN 10" in t for t in texts)
+    assert all("20261120" in t for t in texts)
+
+
+def test_selecting_a_series_shows_loading_message_while_decoding(qapp, tmp_path, monkeypatch):
+    src = tmp_path / "in"
+    src.mkdir()
+    make_xa(src / "a.dcm")
+    win = MainWindow(tmp_path / "data")
+    win.import_from(src)
+    seen = []
+    import cagsyntax.app as appmod
+    real = appmod.read_xa
+
+    def spy(path):
+        seen.append(win.statusBar().currentMessage())
+        return real(path)
+
+    monkeypatch.setattr(appmod, "read_xa", spy)
+    win.item_list.setCurrentRow(0)
+    assert seen and "Loading" in seen[0]
+    assert win.statusBar().currentMessage() == ""
+    assert win.cine.frame_label.text() == "frame 1 / 5"

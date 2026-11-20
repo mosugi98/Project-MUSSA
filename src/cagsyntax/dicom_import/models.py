@@ -38,3 +38,12 @@ class ImportResult:
     imported: list[ImportedItem] = field(default_factory=list)
     skipped_duplicates: list[Path] = field(default_factory=list)
     rejected: list[tuple[Path, str]] = field(default_factory=list)
+
+
+@dataclass
+class SeriesHeader:
+    """What the series list needs, read without decoding pixel data."""
+    view_label: str
+    series_description: str
+    study_date: str
+    burned_in_unclear: bool  # BurnedInAnnotation is anything other than "NO"
