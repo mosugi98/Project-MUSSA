@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .model import Case, CaseResult, Lesion, LesionResult, Part
 from .tables import MEDINA, SEGMENT_IDS, VISUALIZED_HELP, weight
-from .validate import validate
+from .validate import beyond_asked, validate
 
 
 def group_for(total: float) -> str:
@@ -72,8 +72,8 @@ def visualized_points(dominance: str, main_segment: str, first_visualized: str) 
 
 
 def _occlusion_parts(les: Lesion, dominance: str) -> list[Part]:
-    first = [s for s in SEGMENT_IDS if s in les.first_segments]
-    seg = sum(weight(s, dominance) * (5 if s in les.first_segments else 2) for s in les.segments)
+    main = les.first_segment
+    seg = sum(weight(s, dominance) * (5 if s == main else 2) for s in les.segments)
     parts = [Part("Segments (total occlusion: first segment x5, others x2)", seg)]
     if les.age_over_3_months in ("yes", "unknown"):
         parts.append(Part("Age of occlusion over 3 months or unknown", 1))
@@ -81,9 +81,10 @@ def _occlusion_parts(les: Lesion, dominance: str) -> list[Part]:
         parts.append(Part("Blunt stump", 1))
     if les.bridging:
         parts.append(Part("Bridging collaterals", 1))
-    beyond = visualized_points(dominance, first[0], les.beyond_first_visualized)
-    if beyond:
-        parts.append(Part("Segments not visualized beyond the occlusion", beyond))
+    if beyond_asked(main, dominance):
+        beyond = visualized_points(dominance, main, les.beyond_first_visualized)
+        if beyond:
+            parts.append(Part("Segments not visualized beyond the occlusion", beyond))
     if les.side_branch not in (None, "no"):
         parts.append(Part("Side branch at the origin of the occlusion", 1))
     return parts

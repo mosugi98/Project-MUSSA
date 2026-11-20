@@ -12,10 +12,11 @@ def lesion(**kw) -> Lesion:
 
 
 def occluded(**kw) -> Lesion:
-    """Total occlusion of segments 2+3 (first segment 2) with every question answered."""
-    base = dict(segments=["2", "3"], occlusion=True, first_segments=["2"], age_over_3_months="no",
+    """Total occlusion of segments 2+3 (first segment 2), small-side-branch path: trifurcation and
+    bifurcation are not asked (None). Pass side_branch="large" plus trifurcation=0, bifurcation="none"."""
+    base = dict(segments=["2", "3"], occlusion=True, first_segment="2", age_over_3_months="no",
                 blunt_stump=False, bridging=False, beyond_first_visualized="none",
-                side_branch="no", length_gt20=None)
+                side_branch="no", length_gt20=None, trifurcation=None, bifurcation=None)
     base.update(kw)
     return lesion(**base)
 

@@ -8,7 +8,7 @@ class Lesion:
     """One lesion. None means "not answered". Only questions that apply need an answer."""
     segments: list[str]
     occlusion: bool | None = None
-    first_segments: list[str] = field(default_factory=list)  # occlusion: first segment(s) of the T.O.
+    first_segment: str | None = None              # occlusion: first segment of the T.O. (one only)
     age_over_3_months: str | None = None          # "no" | "yes" | "unknown"
     blunt_stump: bool | None = None
     bridging: bool | None = None

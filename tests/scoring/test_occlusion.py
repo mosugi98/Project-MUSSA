@@ -16,13 +16,12 @@ def test_first_segment_x5_other_segments_x2():
     assert total(occluded(beyond_first_visualized="3")) == 5 + 2
 
 
-def test_two_marked_first_segments_both_x5():
-    les = occluded(first_segments=["2", "3"], beyond_first_visualized="3")
-    assert total(les) == 5 + 5
+def test_only_the_marked_first_segment_is_x5():
+    assert total(occluded(first_segment="3", beyond_first_visualized="4")) == 2 + 5
 
 
 def test_left_main_occlusion_by_dominance():
-    les = occluded(segments=["5"], first_segments=["5"], aorto_ostial=False)
+    les = occluded(segments=["5"], first_segment="5", aorto_ostial=False)
     assert total(les, dominance="left") == 6 * 5 + 4   # beyond "none", main 5, left = 4
     assert total(les, dominance="right") == 5 * 5 + 3  # right = 3
 
@@ -40,19 +39,20 @@ def test_blunt_stump_and_bridging_one_point_each():
 
 @pytest.mark.parametrize("side,pts", [("no", 0), ("small", 1), ("large", 1), ("both", 1)])
 def test_side_branch_at_origin(side, pts):
-    assert total(occluded(side_branch=side, beyond_first_visualized="3")) == 7 + pts
+    asked = {"trifurcation": 0, "bifurcation": "none"} if side in ("large", "both") else {}
+    assert total(occluded(side_branch=side, beyond_first_visualized="3", **asked)) == 7 + pts
 
 
 def test_all_occlusion_points_together():
     les = occluded(age_over_3_months="yes", blunt_stump=True, bridging=True, side_branch="large",
-                   beyond_first_visualized="none")
+                   beyond_first_visualized="none", trifurcation=0, bifurcation="none")
     assert total(les) == 7 + 1 + 1 + 1 + 1 + 2
 
 
 def test_occlusion_still_scores_bifurcation_and_other_features():
-    les = occluded(beyond_first_visualized="3", bifurcation="C", bifurcation_angle_lt70=False,
-                   heavy_calcification=True)
-    assert total(les) == 7 + 1 + 2
+    les = occluded(beyond_first_visualized="3", side_branch="large", trifurcation=0, bifurcation="C",
+                   bifurcation_angle_lt70=False, heavy_calcification=True)
+    assert total(les) == 7 + 1 + 1 + 2
 
 
 def test_non_occluded_lesion_ignores_occlusion_answers():
@@ -91,9 +91,7 @@ def test_visualized_points_matches_official_trace(dom, main, active, expected):
     assert visualized_points(dom, main, active) == expected
 
 
-def test_main_segment_is_the_most_proximal_first_segment_in_table_order():
-    # first segments 3 and 2: main is 2 (table order), so beyond "none" right = 2
-    les = occluded(segments=["2", "3"], first_segments=["3", "2"], beyond_first_visualized="none")
+def test_beyond_question_skipped_scores_zero():
+    les = occluded(segments=["8"], first_segment="8", beyond_first_visualized=None)
     r = score_case(case(les))
-    assert r.status == "complete"
-    assert [p.points for p in r.lesions[0].parts if "beyond" in p.label.lower()] == [2]
+    assert r.status == "complete" and r.total == 1 * 5

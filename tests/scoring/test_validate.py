@@ -12,9 +12,9 @@ def lesion(**kw):
 
 
 def occluded(**kw):
-    base = dict(segments=["2", "3"], occlusion=True, first_segments=["2"], age_over_3_months="yes",
+    base = dict(segments=["2", "3"], occlusion=True, first_segment="2", age_over_3_months="yes",
                 blunt_stump=False, bridging=False, beyond_first_visualized="none",
-                side_branch="no", length_gt20=None)
+                side_branch="no", length_gt20=None, trifurcation=None, bifurcation=None)
     base.update(kw)
     return lesion(**base)
 
@@ -73,16 +73,16 @@ def test_thirteen_lesions_is_an_error():  # Review Focus 5
 
 
 def test_first_segment_must_be_in_lesion():
-    assert "first_segment_not_in_lesion" in codes(case(occluded(first_segments=["8"])))[0]
+    assert "first_segment_not_in_lesion" in codes(case(occluded(first_segment="8")))[0]
 
 
 def test_occlusion_fields_without_occlusion_is_an_error():
     assert "occlusion_fields_without_occlusion" in codes(case(lesion(blunt_stump=True)))[0]
-    assert "occlusion_fields_without_occlusion" in codes(case(lesion(first_segments=["8"])))[0]
+    assert "occlusion_fields_without_occlusion" in codes(case(lesion(first_segment="8")))[0]
 
 
 def test_incomplete_occlusion_answers_are_missing():
-    assert "occlusion_incomplete" in codes(case(occluded(first_segments=[])))[1]
+    assert "occlusion_incomplete" in codes(case(occluded(first_segment=None)))[1]
     assert "occlusion_incomplete" in codes(case(occluded(bridging=None)))[1]
     assert "occlusion_incomplete" in codes(case(occluded(beyond_first_visualized=None)))[1]
 
@@ -123,7 +123,29 @@ def test_beyond_segment_must_be_allowed_for_the_occlusions_main_segment():
     assert codes(case(occluded(beyond_first_visualized="3"))) == (set(), set())
     assert "beyond_segment_invalid" in codes(case(occluded(beyond_first_visualized="7")))[0]
     # main segment 5 denies 9, 9a, 10, 10a, 12, 12a, 12b, 14a, 14b
-    assert "beyond_segment_invalid" in codes(case(occluded(segments=["5"], first_segments=["5"], beyond_first_visualized="9")))[0]
+    assert "beyond_segment_invalid" in codes(case(occluded(segments=["5"], first_segment="5", beyond_first_visualized="9")))[0]
+
+
+def test_trifurcation_and_bifurcation_not_asked_after_small_side_branch():
+    for side in ("no", "small"):
+        assert "trifurcation_bifurcation_not_asked" in codes(case(occluded(side_branch=side, trifurcation=0)))[0]
+        assert "trifurcation_bifurcation_not_asked" in codes(case(occluded(side_branch=side, bifurcation="none")))[0]
+        assert codes(case(occluded(side_branch=side))) == (set(), set())
+
+
+def test_trifurcation_and_bifurcation_asked_after_large_side_branch():
+    for side in ("large", "both"):
+        assert "question_unanswered" in codes(case(occluded(side_branch=side)))[1]
+        assert codes(case(occluded(side_branch=side, trifurcation=0, bifurcation="none"))) == (set(), set())
+
+
+def test_beyond_question_not_asked_when_main_segment_has_a_single_candidate():
+    # main segment 8 has only itself in range: the official form skips the question
+    skipped = occluded(segments=["8"], first_segment="8", beyond_first_visualized=None)
+    assert codes(case(skipped)) == (set(), set())
+    assert "beyond_not_asked" in codes(case(occluded(segments=["8"], first_segment="8", beyond_first_visualized="none")))[0]
+    # main segment 3 under left dominance: 4 and 16 are hidden, so only segment 3 remains
+    assert codes(case(occluded(segments=["3"], first_segment="3", beyond_first_visualized=None), dominance="left")) == (set(), set())
 
 
 def test_malformed_input_does_not_raise():
