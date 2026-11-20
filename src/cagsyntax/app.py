@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer
@@ -17,6 +18,8 @@ from .dicom_import.importer import import_path
 from .dicom_import.models import ImportRejected, ImportResult
 from .dicom_import.reader import read_header, read_xa
 from .dicom_import.views import label_view
+from .export.dataset import build_dataset
+from .export.writer import ExportResult, write_export
 from .form_state import case_from_json, case_to_json
 from .library import DEFAULT_LABEL, Library
 from .report import disagreement_report
@@ -82,6 +85,18 @@ def row_text(view: str, description: str, study_date: str, burned_in_unclear: bo
              folder: str = DEFAULT_LABEL, kind: str = "cine", frame_count: int = 1) -> str:
     return (f"[{folder}] {kind_text(kind, frame_count)} | {view} | {description} | {study_date}"
             f"{BURNED_IN_FLAG if burned_in_unclear else ''}")
+
+
+def format_export_summary(result: ExportResult) -> str:
+    lines = [f"Exported {result.cases} case(s) with {result.series} series to:", str(result.folder)]
+    if result.images_copied:
+        lines.append(f"{result.images_copied} de-identified image(s) were copied into the export.")
+    if result.excluded:
+        lines.append(f"{result.excluded} case(s) were not exported (the reasons are in README.txt).")
+    if result.inconsistent:
+        lines.append(f"{result.inconsistent} case(s) where the current engine's total differs from the "
+                     "confirmed reference (see README.txt).")
+    return "\n".join(lines)
 
 
 def format_summary(result: ImportResult) -> str:
@@ -163,7 +178,8 @@ class MainWindow(QMainWindow):
         self.user_combo.currentIndexChanged.connect(self._on_user_changed)
         bar.addWidget(self.user_combo)
         for text, slot in (("Add scorer", self._ask_add_user), ("Score case", self.score_selected_case),
-                           ("Disagreements", self._show_disagreements_dialog)):
+                           ("Disagreements", self._show_disagreements_dialog),
+                           ("Export dataset", self._ask_export)):
             act = QAction(text, self)
             act.triggered.connect(lambda _checked=False, s=slot: s())
             bar.addAction(act)
@@ -537,6 +553,56 @@ class MainWindow(QMainWindow):
 
     def _show_disagreements_dialog(self) -> None:
         QMessageBox.information(self, "Disagreements", self.show_disagreements())
+
+    # ---- export ----
+    def export_confirmed_cases(self, out_dir: Path, include_stills: bool = False,
+                               copy_images: bool = False) -> ExportResult | None:
+        """Export every confirmed case as a de-identified dataset folder. Returns None, with a
+        message, if nothing could be exported."""
+        if self.store is None:
+            self._say(self.store_error or "Scoring is not available, so there is nothing to export.")
+            return None
+        try:
+            dataset = build_dataset(self.store, self.library, include_stills)
+        except StoreError as exc:
+            self._failed(f"Nothing was exported: {exc}")
+            return None
+        if not dataset.cases:
+            note = ""
+            if dataset.excluded:
+                note = " " + "; ".join(f"{e.reason}" for e in dataset.excluded[:3]) + "."
+            self._say("There are no confirmed cases to export. Confirm a reference score first." + note)
+            return None
+        try:
+            result = write_export(dataset, self.library, Path(out_dir), copy_images)
+        except FileExistsError as exc:
+            self._failed(f"Nothing was exported: {exc}")
+            return None
+        except (OSError, ValueError) as exc:
+            self._failed(f"Export FAILED, nothing was written: {exc}")
+            return None
+        self._say(f"Exported {result.cases} case(s), {result.series} series to {result.folder}")
+        return result
+
+    def _ask_export(self) -> None:
+        if self.store is None:
+            self._say(self.store_error or "Scoring is not available, so there is nothing to export.")
+            return
+        parent = QFileDialog.getExistingDirectory(self, "Choose the folder where the export will be created")
+        if not parent:
+            return
+        name, ok = QInputDialog.getText(self, "Export dataset", "Name for the new export folder:",
+                                        text=f"mussa-export-{datetime.now():%Y%m%d-%H%M}")
+        name = Path(name.strip()).name if ok else ""
+        if not name:
+            return
+        stills = self._confirm("Include still images?\n\n(Cine series are always included.)")
+        copy = self._confirm("Copy the de-identified images into the export folder?\n\n"
+                             "No keeps paths into MUSSA's data folder (smaller, but moving that folder "
+                             "breaks them).")
+        result = self.export_confirmed_cases(Path(parent) / name, stills, copy)
+        if result is not None:
+            QMessageBox.information(self, "Export finished", format_export_summary(result))
 
     # ---- list ----
     def refresh_list(self) -> None:
