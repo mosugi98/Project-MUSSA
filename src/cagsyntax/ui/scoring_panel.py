@@ -53,7 +53,7 @@ class ScoringPanel(QWidget):
         self._current = 0
         self._notice = ""
         self._syncing = False
-        self._rows: dict[str, tuple[QWidget, list[tuple[object, QPushButton]], QHBoxLayout]] = {}
+        self._rows: dict[str, tuple[QWidget, list[tuple[object, QPushButton]], QGridLayout]] = {}
         self._build()
         self._sync()
 
@@ -194,7 +194,7 @@ class ScoringPanel(QWidget):
         form_layout = QVBoxLayout(form)
         for field, label, options in QUESTIONS:
             row = QGroupBox(label)
-            layout = QHBoxLayout(row)
+            layout = QGridLayout(row)
             self._rows[field] = (row, [], layout)
             if options != DYNAMIC:
                 self._fill_row(field, options)
@@ -205,6 +205,7 @@ class ScoringPanel(QWidget):
         form_layout.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(form)
         body.addWidget(scroll, 2)
         root.addLayout(body, 1)
@@ -228,11 +229,12 @@ class ScoringPanel(QWidget):
             layout.removeWidget(button)
             button.deleteLater()
         buttons.clear()
-        for text, value in options:
+        columns = 5 if len(options) > 5 else max(1, len(options))   # long option lists wrap
+        for i, (text, value) in enumerate(options):
             button = QPushButton(text)
             button.setCheckable(True)
             button.clicked.connect(lambda _c=False, f=field, v=value: self.answer(f, v))
-            layout.addWidget(button)
+            layout.addWidget(button, i // columns, i % columns)
             buttons.append((value, button))
 
     def _on_dominance_combo(self, _index: int) -> None:
