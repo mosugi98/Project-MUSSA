@@ -31,6 +31,13 @@ class Case:
     lesions: list[Lesion]
     diffuse_segments: list[str] = field(default_factory=list)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Case":
+        """Inverse of dataclasses.asdict(case)."""
+        return cls(dominance=data["dominance"], scoring_dominance=data["scoring_dominance"],
+                   lesions=[Lesion(**les) for les in data["lesions"]],
+                   diffuse_segments=list(data.get("diffuse_segments", [])))
+
 
 @dataclass
 class Issue:
