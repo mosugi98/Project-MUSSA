@@ -1,4 +1,4 @@
-"""The 25 SYNTAX segments, one model output channel each, in the scoring engine's table order.
+"""The 25 SYNTAX segments, one model output channel each, in the engine's segment-table order.
 
 Kept free of project imports because the training kit receives a verbatim copy of this file."""
 
