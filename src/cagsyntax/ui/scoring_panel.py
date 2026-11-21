@@ -10,6 +10,7 @@ from ..scoring import Case, CaseResult, Lesion, score_case
 from ..scoring.tables import MEDINA, SEGMENT_IDS, weight
 from ..scoring.validate import MAX_LESIONS, beyond_candidates
 from .segment_tree import SegmentTree
+from .widgets import GlossyButton
 
 BOOL = [("No", False), ("Yes", True)]
 DYNAMIC = "dynamic"
@@ -185,9 +186,9 @@ class ScoringPanel(QWidget):
         self.lesion_list.setMaximumHeight(120)
         self.lesion_list.currentRowChanged.connect(self._on_lesion_row)
         buttons = QHBoxLayout()
-        add = QPushButton("Add lesion")
+        add = GlossyButton("Add lesion", variant="primary")
         add.clicked.connect(self.add_lesion)
-        remove = QPushButton("Remove lesion")
+        remove = GlossyButton("Remove lesion")
         remove.clicked.connect(lambda: self.remove_lesion(self._current))
         buttons.addWidget(add)
         buttons.addWidget(remove)
@@ -239,7 +240,7 @@ class ScoringPanel(QWidget):
         buttons.clear()
         columns = 5 if len(options) > 5 else max(1, len(options))   # long option lists wrap
         for i, (text, value) in enumerate(options):
-            button = QPushButton(text)
+            button = GlossyButton(text)
             button.setCheckable(True)
             button.clicked.connect(lambda _c=False, f=field, v=value: self.answer(f, v))
             layout.addWidget(button, i // columns, i % columns)
@@ -308,7 +309,7 @@ class ScoringPanel(QWidget):
                 item.widget().deleteLater()
         segments = [s for s in SEGMENT_IDS if dom and weight(s, dom) is not None]
         for i, seg in enumerate(segments):
-            button = QPushButton(seg)
+            button = GlossyButton(seg)
             button.setCheckable(True)
             button.setChecked(seg in self._case.diffuse_segments)
             button.clicked.connect(lambda _c=False, s=seg: self.toggle_diffuse(s))

@@ -10,3 +10,5 @@ tools/oracle/official/
 arcade/
 dataset contoh/
 tools/training/dist/
+dist/
+build/

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QGraphicsPixmapItem, QGraphicsScene, QGraphicsSim
                                QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from ..dicom_import.models import XASeries
+from ..ui.widgets import GlossyButton
 from .player import CinePlayer
 
 MIN_ZOOM, MAX_ZOOM = 0.25, 8.0
@@ -54,9 +55,9 @@ class CineWidget(QWidget):
         self.view.setScene(self._scene)
         self.view_label = QLabel("No series loaded")
         self.frame_label = QLabel("frame 0 / 0")
-        self.back_btn = QPushButton("<")
-        self.play_btn = QPushButton("Play")
-        self.step_fwd_btn = QPushButton(">")
+        self.back_btn = GlossyButton("<")
+        self.play_btn = GlossyButton("Play", variant="primary")
+        self.step_fwd_btn = GlossyButton(">")
         self.slider = QSlider(Qt.Orientation.Horizontal)
         controls = QHBoxLayout()
         for w in (self.back_btn, self.play_btn, self.step_fwd_btn, self.slider, self.frame_label):

@@ -37,7 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train the MUSSA segment model on ARCADE.")
     p.add_argument("--arcade", required=True, help="folder that holds the syntax/ and stenosis/ folders")
     p.add_argument("--out", required=True, help="folder for segments.onnx and segments.card.json")
-    p.add_argument("--epochs", type=int, default=30)
+    p.add_argument("--epochs", type=int, default=60)
+    p.add_argument("--patience", type=int, default=15, help="stop after this many epochs without a better validation Dice (0 = never stop early)")
+    p.add_argument("--pos-weight", type=float, default=5.0, help="extra weight on positive pixels in the cross-entropy (segments are thin)")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--size", type=int, default=512, help="model input size in pixels")
@@ -95,6 +97,32 @@ def augment_pair(img: np.ndarray, masks: np.ndarray, rng: np.random.Generator, g
     return out_img, out_masks
 
 
+# ------------------------------------------------------------------ loss and stopping
+def segmentation_loss(logits, y, torch, pos_weight: float = 5.0):
+    """Cross-entropy with extra weight on positive pixels, plus a soft Dice term.
+
+    The Dice term is pooled over the whole batch and counts only segments that are present in it. The first
+    version averaged a per-image Dice over all 25 segments, so an empty prediction of an absent segment scored
+    a perfect 1; most segments are absent from most images, so the model learned to predict nothing and the
+    rare segments collapsed to zero."""
+    weight = torch.full((1, y.shape[1], 1, 1), float(pos_weight), device=logits.device)
+    bce = torch.nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=weight)
+    p = torch.sigmoid(logits)
+    truth = y.sum(dim=(0, 2, 3))
+    inter = (p * y).sum(dim=(0, 2, 3))
+    dice = (2 * inter + 1.0) / (p.sum(dim=(0, 2, 3)) + truth + 1.0)
+    present = truth > 0
+    return bce + ((1.0 - dice[present]).mean() if bool(present.any()) else logits.sum() * 0.0)
+
+
+def should_stop(val_history: list[float], patience: int) -> bool:
+    """True when the best validation score is `patience` or more epochs old (patience 0 never stops)."""
+    if patience <= 0 or not val_history:
+        return False
+    best_at = max(range(len(val_history)), key=lambda i: (val_history[i], -i))
+    return len(val_history) - 1 - best_at >= patience
+
+
 # ------------------------------------------------------------------ training
 class SegmentationData:
     """Map-style dataset of ARCADE images and 25-channel masks. It is a plain module-level class
@@ -142,13 +170,9 @@ def train(args: argparse.Namespace) -> dict:
                      in_channels=1, classes=len(SEGMENT_NAMES)).to(device)
     optimiser = torch.optim.AdamW(model.parameters(), lr=args.lr)
     schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=max(1, args.epochs))
-    bce = torch.nn.BCEWithLogitsLoss()
 
     def loss_fn(logits, y):
-        p = torch.sigmoid(logits)
-        inter = (p * y).sum(dim=(2, 3))
-        dice = (2 * inter + 1.0) / (p.sum(dim=(2, 3)) + y.sum(dim=(2, 3)) + 1.0)
-        return bce(logits, y) + (1.0 - dice).mean()
+        return segmentation_loss(logits, y, torch, args.pos_weight)
 
     @torch.no_grad()
     def evaluate(loader):
@@ -187,6 +211,9 @@ def train(args: argparse.Namespace) -> dict:
               f"val mean dice {val_dice:.4f}  ({time.time() - started:.0f}s)", flush=True)
         if val_dice > best:
             best, best_state = val_dice, {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        if should_stop([h["val_mean_dice"] for h in history], args.patience):
+            print(f"no better validation Dice for {args.patience} epochs: stopping early", flush=True)
+            break
     model.load_state_dict(best_state)
 
     test_dice, test_scores = None, None
@@ -206,7 +233,9 @@ def train(args: argparse.Namespace) -> dict:
         "input_size": args.size, "classes": list(SEGMENT_NAMES),
         "preprocess": "ai/preprocess.py v1: per-frame min-max, resize, mean 0.5 std 0.5",
         "val_mean_dice": best, "test_mean_dice": test_dice, "per_segment_test_dice": test_scores,
-        "training": {"epochs": args.epochs, "batch_size": args.batch_size, "lr": args.lr,
+        "training": {"epochs": args.epochs, "epochs_run": len(history), "patience": args.patience,
+                     "pos_weight": args.pos_weight, "loss": "bce(pos_weight) + batch dice over present segments",
+                     "batch_size": args.batch_size, "lr": args.lr,
                      "encoder": args.encoder, "encoder_weights": args.encoder_weights, "seed": SEED,
                      "device": device, "history": history},
         "notice": "Educational research model trained on public ARCADE data. Not a certified medical "

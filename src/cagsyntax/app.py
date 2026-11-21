@@ -28,7 +28,10 @@ from .library import DEFAULT_LABEL, Library
 from .report import disagreement_report
 from .scoring import Case, Lesion
 from .store import LEVELS, CaseStore, Confirmation, Entry, StoreError, User
+from .ui import theme as T
+from .ui.appearance_dialog import AppearanceDialog
 from .ui.scoring_panel import ScoringPanel
+from .ui.widgets import GlossyButton, install_theme
 from .viewer.widget import CineWidget
 
 PATH_ROLE = 0x100   # Qt.UserRole: stored file path
@@ -123,6 +126,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("MUSSA - XA viewer")
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.theme_path = self.data_dir / "theme.json"
+        theme, theme_problem = T.load_theme(self.theme_path)
+        install_theme(QApplication.instance(), theme)
+        self._appearance: AppearanceDialog | None = None
         self.library = Library(self.data_dir)
         self.store_dir = self.library.store_dir
         self.salt = get_or_create_salt(self.data_dir)
@@ -173,13 +180,26 @@ class MainWindow(QMainWindow):
         self.ai_action.setToolTip("Outline the coronary segments on the shown frame (AI suggestion)")
         self.ai_action.triggered.connect(lambda checked: self.toggle_ai_segments(checked))
         bar.addAction(self.ai_action)
+        look = QAction("Appearance", self)
+        look.setToolTip("Change colors, roundness, gloss and animation")
+        look.triggered.connect(lambda _c=False: self.open_appearance())
+        bar.addAction(look)
         self._build_scoring_ui()
         self.item_list.currentItemChanged.connect(self._on_select)
         self.folder_combo.currentTextChanged.connect(lambda _t: self.refresh_list())
         self.refresh_list()
         self._restore_users()
+        if theme_problem:
+            self.statusBar().showMessage(theme_problem)
         if self.store_error:
             self.statusBar().showMessage(self.store_error)
+
+    def open_appearance(self) -> AppearanceDialog:
+        if self._appearance is None or not self._appearance.isVisible():
+            self._appearance = AppearanceDialog(self.theme_path, self)
+            self._appearance.show()
+        self._appearance.raise_()
+        return self._appearance
 
     def announce_startup_problems(self) -> None:
         """Show the case-store problem (if any) in a dialog. main() calls this once the window is
@@ -206,9 +226,9 @@ class MainWindow(QMainWindow):
         self.entries_list = QListWidget()
         self.entries_list.setMaximumHeight(90)
         buttons = QHBoxLayout()
-        self.save_button = QPushButton("Save score")
+        self.save_button = GlossyButton("Save score", variant="primary")
         self.save_button.clicked.connect(lambda _c=False: self.save_entry())
-        self.confirm_button = QPushButton("Confirm selected score as reference")
+        self.confirm_button = GlossyButton("Confirm selected score as reference", variant="accent")
         self.confirm_button.clicked.connect(lambda _c=False: self.confirm_selected_entry())
         buttons.addWidget(self.save_button)
         buttons.addWidget(self.confirm_button)
