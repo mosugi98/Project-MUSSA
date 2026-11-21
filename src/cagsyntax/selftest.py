@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -86,14 +87,40 @@ CHECKS = (
 )
 
 
-def run_selftest() -> list[Check]:
-    """Run every check; a failure is reported, never raised."""
+AI_CHECK_NAME = "AI segment model (optional)"
+
+
+def default_data_dir() -> Path:
+    return Path.home() / "MUSSA-data"
+
+
+def check_ai_model(data_dir: Path) -> Check:
+    """The segment model is optional: none installed is fine. If one is there it must load and run once."""
+    path = Path(data_dir) / "models" / "segments.onnx"
+    if not path.exists():
+        return Check(AI_CHECK_NAME, True, f"not installed (optional; copy segments.onnx and segments.card.json to {path.parent})")
+    try:
+        import numpy as np
+        from .ai.segmenter import ModelUnavailable, Segmenter
+        segmenter = Segmenter.load(path)
+        frame = np.random.default_rng(0).integers(0, 255, size=(96, 96)).astype(np.uint8)
+        masks = segmenter.predict(frame)
+        return Check(AI_CHECK_NAME, True, f"{path.name} loaded and predicted {masks.shape[0]} segment masks "
+                                          f"(trained {segmenter.card.trained_at})")
+    except Exception as exc:                         # a broken model must be visible, not hidden
+        return Check(AI_CHECK_NAME, False, f"{path.name}: {exc}")
+
+
+def run_selftest(data_dir: Path | None = None) -> list[Check]:
+    """Run every check; a failure is reported, never raised. The last check looks for the optional AI model
+    in `data_dir` (default: the MUSSA-data folder of the current user)."""
     results = []
     for name, function in CHECKS:
         try:
             results.append(Check(name, True, function()))
         except Exception as exc:                      # any failure means this install is not usable
             results.append(Check(name, False, f"{type(exc).__name__}: {exc}"))
+    results.append(check_ai_model(default_data_dir() if data_dir is None else Path(data_dir)))
     return results
 
 

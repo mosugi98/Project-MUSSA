@@ -48,3 +48,31 @@ def test_the_selftest_command_line_exits_zero_when_all_is_well():
                           timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "Self-test passed" in done.stdout
+
+
+# ---- the optional AI model ----
+def test_no_model_installed_is_fine_and_says_how_to_add_it(tmp_path):
+    check = selftest.check_ai_model(tmp_path)
+    assert check.ok and "not installed" in check.detail and "segments.onnx" in check.detail
+
+
+def test_a_working_model_is_loaded_and_run_once(tmp_path):
+    from tests.ai.toy_models import make_toy_model, write_card
+    models = tmp_path / "models"
+    models.mkdir()
+    write_card(make_toy_model(models / "segments.onnx", size=32), size=32)
+    check = selftest.check_ai_model(tmp_path)
+    assert check.ok and "predicted" in check.detail
+
+
+def test_a_broken_model_fails_with_the_reason(tmp_path):
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "segments.onnx").write_bytes(b"not a model")
+    check = selftest.check_ai_model(tmp_path)
+    assert not check.ok and "segments.onnx" in check.detail
+
+
+def test_run_selftest_includes_the_ai_check_for_the_given_data_folder(tmp_path):
+    results = selftest.run_selftest(tmp_path)
+    assert results[-1].name == "AI segment model (optional)" and results[-1].ok
