@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SRC_AI = ROOT / "src" / "cagsyntax" / "ai"
 HERE = Path(__file__).resolve().parent
-SHARED = ("arcade.py", "preprocess.py", "metrics.py", "segment_names.py")
+SHARED = ("arcade.py", "preprocess.py", "metrics.py", "segment_names.py", "sampling.py")
 
 README = """MUSSA training kit (segment model, ARCADE)
 

@@ -22,10 +22,12 @@ from PIL import Image
 try:                                      # inside the kit
     from mussa_ai.arcade import ArcadeSplit
     from mussa_ai.preprocess import preprocess, resize_mask
+    from mussa_ai.sampling import rare_segment_weights
     from mussa_ai.segment_names import SEGMENT_NAMES
 except ImportError:                       # inside the project (PYTHONPATH=src)
     from cagsyntax.ai.arcade import ArcadeSplit
     from cagsyntax.ai.preprocess import preprocess, resize_mask
+    from cagsyntax.ai.sampling import rare_segment_weights
     from cagsyntax.ai.segment_names import SEGMENT_NAMES
 
 SEED = 20261121
@@ -37,6 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train the MUSSA segment model on ARCADE.")
     p.add_argument("--arcade", required=True, help="folder that holds the syntax/ and stenosis/ folders")
     p.add_argument("--out", required=True, help="folder for segments.onnx and segments.card.json")
+    p.add_argument("--task", choices=("segments", "stenosis"), default="segments",
+                   help="segments: 25 SYNTAX segments (ARCADE syntax); stenosis: narrowings (ARCADE stenosis)")
+    p.add_argument("--rare-power", type=float, default=0.5,
+                   help="show images with rare segments more often (0 = plain shuffling, 1 = strongest)")
+    p.add_argument("--init-weights", default=None, help="start from earlier weights (segments_best.pt) to fine-tune")
+    p.add_argument("--extra-train", action="append", default=[],
+                   help="an additional COCO split folder to train on, e.g. your own labelled cases (repeatable)")
     p.add_argument("--epochs", type=int, default=60)
     p.add_argument("--patience", type=int, default=15, help="stop after this many epochs without a better validation Dice (0 = never stop early)")
     p.add_argument("--pos-weight", type=float, default=5.0, help="extra weight on positive pixels in the cross-entropy (segments are thin)")
@@ -97,6 +106,16 @@ def augment_pair(img: np.ndarray, masks: np.ndarray, rng: np.random.Generator, g
     return out_img, out_masks
 
 
+# ------------------------------------------------------------------ tasks
+def task_settings(task: str) -> dict:
+    """Everything that differs between the segment model and the stenosis model."""
+    if task == "stenosis":
+        return {"classes": ["stenosis"], "folder": "stenosis", "mode": "stenosis",
+                "model": "stenosis.onnx", "card": "stenosis.card.json", "label": "ARCADE stenosis"}
+    return {"classes": list(SEGMENT_NAMES), "folder": "syntax", "mode": "segments",
+            "model": "segments.onnx", "card": "segments.card.json", "label": "ARCADE syntax"}
+
+
 # ------------------------------------------------------------------ loss and stopping
 def segmentation_loss(logits, y, torch, pos_weight: float = 5.0):
     """Cross-entropy with extra weight on positive pixels, plus a soft Dice term.
@@ -128,8 +147,8 @@ class SegmentationData:
     """Map-style dataset of ARCADE images and 25-channel masks. It is a plain module-level class
     (no torch base class) so DataLoader workers can pickle it on Windows and on Python 3.14."""
 
-    def __init__(self, split_root, size: int, augment: bool, limit: int | None = None):
-        self.split = ArcadeSplit(split_root)
+    def __init__(self, split_root, size: int, augment: bool, limit: int | None = None, mode: str = "segments"):
+        self.split = ArcadeSplit(split_root, mode=mode)
         self.size, self.augment, self.epoch = size, augment, 0
         self.n = min(len(self.split), limit) if limit else len(self.split)
 
@@ -148,26 +167,37 @@ class SegmentationData:
 
 def train(args: argparse.Namespace) -> dict:
     import torch
-    import torch.nn.functional as F
     import segmentation_models_pytorch as smp
-    from torch.utils.data import DataLoader
+    from torch.utils.data import ConcatDataset, DataLoader, WeightedRandomSampler
 
     torch.manual_seed(SEED)
     np.random.seed(SEED)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    cfg = task_settings(args.task)
+    names = cfg["classes"]
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    syntax = Path(args.arcade) / "syntax"
+    data_root = Path(args.arcade) / cfg["folder"]
 
-    train_set = SegmentationData(syntax / "train", args.size, True, args.limit)
-    val_set = SegmentationData(syntax / "val", args.size, False, args.limit)
+    train_sets = [SegmentationData(data_root / "train", args.size, True, args.limit, cfg["mode"])]
+    train_sets += [SegmentationData(Path(extra), args.size, True, args.limit, cfg["mode"]) for extra in args.extra_train]
+    val_set = SegmentationData(data_root / "val", args.size, False, args.limit, cfg["mode"])
+    train_set = train_sets[0] if len(train_sets) == 1 else ConcatDataset(train_sets)
     workers = 0 if args.smoke else 2
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=workers)
+    sampler, shuffle = None, True
+    if args.rare_power > 0 and args.task == "segments":
+        counts = [c for ds in train_sets for c in ds.split.image_counts()[:len(ds)]]
+        weights = rare_segment_weights(counts, args.rare_power)
+        sampler, shuffle = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True), False
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=shuffle, sampler=sampler, num_workers=workers)
     val_loader = DataLoader(val_set, batch_size=args.batch_size, num_workers=workers)
 
     model = smp.Unet(encoder_name=args.encoder,
-                     encoder_weights=None if args.encoder_weights == "none" else "imagenet",
-                     in_channels=1, classes=len(SEGMENT_NAMES)).to(device)
+                     encoder_weights=None if (args.encoder_weights == "none" or args.init_weights) else "imagenet",
+                     in_channels=1, classes=len(names)).to(device)
+    if args.init_weights:
+        model.load_state_dict(torch.load(args.init_weights, map_location=device))
+        print(f"starting from {args.init_weights}", flush=True)
     optimiser = torch.optim.AdamW(model.parameters(), lr=args.lr)
     schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=max(1, args.epochs))
 
@@ -176,9 +206,9 @@ def train(args: argparse.Namespace) -> dict:
 
     @torch.no_grad()
     def evaluate(loader):
-        """Dice per segment from pixel counts pooled over all images; None for absent segments."""
+        """Dice per class from pixel counts pooled over all images; None for absent classes."""
         model.eval()
-        inter = torch.zeros(len(SEGMENT_NAMES), dtype=torch.float64)
+        inter = torch.zeros(len(names), dtype=torch.float64)
         psum, tsum = inter.clone(), inter.clone()
         for x, y in loader:
             pred = (torch.sigmoid(model(x.to(device))) > 0.5).float().cpu()
@@ -186,7 +216,7 @@ def train(args: argparse.Namespace) -> dict:
             psum += pred.sum(dim=(0, 2, 3)).double()
             tsum += y.sum(dim=(0, 2, 3)).double()
         scores = {}
-        for c, name in enumerate(SEGMENT_NAMES):
+        for c, name in enumerate(names):
             total = float(psum[c] + tsum[c])
             scores[name] = None if total == 0 else float(2 * inter[c] / total)
         present = [v for v in scores.values() if v is not None]
@@ -195,7 +225,8 @@ def train(args: argparse.Namespace) -> dict:
     best, best_state, history = -1.0, None, []
     for epoch in range(args.epochs):
         model.train()
-        train_set.epoch = epoch
+        for ds in train_sets:
+            ds.epoch = epoch
         started, total_loss = time.time(), 0.0
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
@@ -218,31 +249,34 @@ def train(args: argparse.Namespace) -> dict:
 
     test_dice, test_scores = None, None
     if not args.smoke:
-        test_set = SegmentationData(syntax / "test", args.size, False, args.limit)
+        test_set = SegmentationData(data_root / "test", args.size, False, args.limit, cfg["mode"])
         test_dice, test_scores = evaluate(DataLoader(test_set, batch_size=args.batch_size, num_workers=workers))
         print(f"test mean dice {test_dice:.4f}", flush=True)
 
-    torch.save(best_state, out_dir / "segments_best.pt")      # kept even if the ONNX export below fails
-    onnx_path = out_dir / "segments.onnx"
+    torch.save(best_state, out_dir / f"{args.task}_best.pt")      # kept even if the ONNX export below fails
+    onnx_path = out_dir / cfg["model"]
     export_onnx(model, args.size, onnx_path, torch)
     card = {
-        "format_version": CARD_FORMAT,
-        "trained_on": ("ARCADE syntax" if not args.smoke else "ARCADE syntax (SMOKE TEST ONLY, not a real model)")
-                      + ", https://zenodo.org/records/10390295, CC0",
+        "format_version": CARD_FORMAT, "task": args.task,
+        "trained_on": (cfg["label"] if not args.smoke else cfg["label"] + " (SMOKE TEST ONLY, not a real model)")
+                      + ", https://zenodo.org/records/10390295, CC0"
+                      + (f" + {len(args.extra_train)} extra folder(s)" if args.extra_train else ""),
         "trained_at": datetime.now(timezone.utc).date().isoformat(),
-        "input_size": args.size, "classes": list(SEGMENT_NAMES),
+        "input_size": args.size, "classes": list(names),
         "preprocess": "ai/preprocess.py v1: per-frame min-max, resize, mean 0.5 std 0.5",
         "val_mean_dice": best, "test_mean_dice": test_dice, "per_segment_test_dice": test_scores,
         "training": {"epochs": args.epochs, "epochs_run": len(history), "patience": args.patience,
-                     "pos_weight": args.pos_weight, "loss": "bce(pos_weight) + batch dice over present segments",
+                     "pos_weight": args.pos_weight, "rare_power": args.rare_power,
+                     "init_weights": args.init_weights, "extra_train": list(args.extra_train),
+                     "loss": "bce(pos_weight) + batch dice over present classes",
                      "batch_size": args.batch_size, "lr": args.lr,
                      "encoder": args.encoder, "encoder_weights": args.encoder_weights, "seed": SEED,
                      "device": device, "history": history},
         "notice": "Educational research model trained on public ARCADE data. Not a certified medical "
                   "device; suggestions only, never a diagnosis.",
     }
-    (out_dir / "segments.card.json").write_text(json.dumps(card, indent=1), encoding="utf-8")
-    print(f"wrote {onnx_path} and segments.card.json", flush=True)
+    (out_dir / cfg["card"]).write_text(json.dumps(card, indent=1), encoding="utf-8")
+    print(f"wrote {onnx_path} and {cfg['card']}", flush=True)
     return card
 
 

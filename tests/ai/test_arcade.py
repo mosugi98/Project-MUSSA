@@ -119,3 +119,36 @@ def test_segment_names_live_in_a_dependency_free_module_that_matches_the_engine(
     arcade_src = (Path(segment_names.__file__).parent / "arcade.py").read_text(encoding="utf-8")
     for text in (src, arcade_src):
         assert "scoring" not in text and "cagsyntax" not in text
+
+
+# ---- per-image counts and the stenosis mode ----
+def test_image_counts_list_the_annotations_of_each_image(tmp_path):
+    split = ArcadeSplit(make_split(tmp_path))
+    assert split.image_counts() == [{"5": 1, "6": 2}, {"9a": 1}]
+
+
+def test_stenosis_mode_gives_one_channel_from_the_stenosis_category_only(tmp_path):
+    split = ArcadeSplit(make_split(tmp_path), mode="stenosis")
+    masks = split.load_masks(0)
+    assert masks.shape == (1, 64, 64) and masks.dtype == bool
+    assert masks[0, 3, 3] and masks[0].sum() == 25 and not masks[0, 20, 20]      # the 1..5 square, not the segments
+    assert not split.load_masks(1).any()                                         # image 2 has no stenosis
+    assert split.class_counts() == {"stenosis": 1} and split.image_counts() == [{"stenosis": 1}, {}]
+
+
+def test_stenosis_mode_accepts_files_without_any_segment_names(tmp_path):
+    import json
+    root = make_split(tmp_path)
+    path = root / "annotations" / "train.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["categories"].append({"id": 9, "name": "not-a-segment"})
+    data["annotations"].append({"id": 9, "image_id": 1, "category_id": 9, "segmentation": [[1, 1, 3, 1, 3, 3]]})
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert ArcadeSplit(root, mode="stenosis").load_masks(0).sum() == 25          # unknown names matter only in segments mode
+    with pytest.raises(ValueError):
+        ArcadeSplit(root)
+
+
+def test_an_unknown_mode_is_refused(tmp_path):
+    with pytest.raises(ValueError):
+        ArcadeSplit(make_split(tmp_path), mode="vessels")
