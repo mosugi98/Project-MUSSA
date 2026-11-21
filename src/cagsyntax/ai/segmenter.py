@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,12 +56,22 @@ def _check_thresholds(thresholds, card_name: str) -> None:
                                "below 1, named after one of the 25 SYNTAX segments. Remove them or re-tune.")
 
 
+def file_identity(path: Path, trained_at: str) -> str:
+    """"<training date> <first 8 characters of the file's SHA-256>": tells apart two models trained on the same day."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return f"{trained_at} {digest.hexdigest()[:8]}"
+
+
 class Segmenter:
     """The trained segment model (ONNX, CPU). predict() returns a boolean mask per SYNTAX segment."""
 
-    def __init__(self, session, card: ModelCard):
+    def __init__(self, session, card: ModelCard, model_id: str | None = None):
         self._session = session
         self.card = card
+        self.model_id = model_id or card.trained_at
         self._input_name = session.get_inputs()[0].name
         self.thresholds = [float(card.thresholds.get(name, 0.5)) for name in SEGMENT_NAMES]
 
@@ -90,7 +101,7 @@ class Segmenter:
             raise ModelUnavailable(f"The model produces output of shape {tuple(result.shape)}; "
                                    f"(1, {classes}, {size}, {size}) is required: {classes} channels, one per "
                                    "SYNTAX segment, at the card size.")
-        return cls(session, card)
+        return cls(session, card, file_identity(model_path, card.trained_at))
 
     def _logits(self, frame: np.ndarray) -> np.ndarray:
         """Float (25, H, W) logits in the frame's own size (nearest-neighbour resize)."""

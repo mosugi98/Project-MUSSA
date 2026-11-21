@@ -11,7 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / "tools" / "training"
 SRC_AI = ROOT / "src" / "cagsyntax" / "ai"
-EXPECTED = {"train_segmentation.py", "segment_names.json", "README.txt", "mussa_ai/__init__.py",
+EXPECTED = {"train_segmentation.py", "segment_names.json", "README.txt", "mussa_ai/__init__.py", "mussa_ai/sampling.py",
             "mussa_ai/arcade.py", "mussa_ai/preprocess.py", "mussa_ai/metrics.py", "mussa_ai/segment_names.py"}
 ARCADE_MD5 = "c5b1973ade06f7dff210f878161e1a76"
 ARCADE_URL = "https://zenodo.org/records/10390295/files/arcade.zip?download=1"
@@ -144,7 +144,8 @@ def test_notebook_installs_the_export_packages_and_checks_the_exported_model_bef
     nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
     code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "onnxscript" in code and "onnxruntime" in code and "onnx " in code + " "
-    assert "(1, 25" in code and code.index("onnxruntime.InferenceSession") < code.index("files.download")
+    assert '("segments", 25)' in code and '("stenosis", 1)' in code
+    assert code.index("onnxruntime.InferenceSession") < code.index("files.download")
 
 
 def test_notebook_works_on_colab_and_kaggle():
@@ -153,3 +154,54 @@ def test_notebook_works_on_colab_and_kaggle():
     for needle in ("/kaggle/working", "/kaggle/input", "ON_COLAB", "__MACOSX"):
         assert needle in code, needle
     assert "KIT" in code and "internet" in "".join("".join(c["source"]) for c in nb["cells"]).lower()
+
+
+def test_training_script_has_the_task_oversampling_and_fine_tuning_options():
+    mod = load_module(TOOLS / "train_segmentation.py", "train_segmentation_opts")
+    args = mod.build_parser().parse_args(["--arcade", "a", "--out", "o"])
+    assert (args.task, args.rare_power, args.init_weights, args.extra_train) == ("segments", 0.5, None, [])
+    more = mod.build_parser().parse_args(["--arcade", "a", "--out", "o", "--task", "stenosis", "--rare-power", "0",
+                                          "--init-weights", "w.pt", "--extra-train", "x", "--extra-train", "y"])
+    assert (more.task, more.rare_power, more.init_weights, more.extra_train) == ("stenosis", 0.0, "w.pt", ["x", "y"])
+    with pytest.raises(SystemExit):
+        mod.build_parser().parse_args(["--arcade", "a", "--out", "o", "--task", "vessels"])
+
+
+def test_task_settings_name_the_classes_folder_and_output_files():
+    mod = load_module(TOOLS / "train_segmentation.py", "train_segmentation_tasks")
+    seg, ste = mod.task_settings("segments"), mod.task_settings("stenosis")
+    assert len(seg["classes"]) == 25 and seg["folder"] == "syntax" and seg["model"] == "segments.onnx"
+    assert ste["classes"] == ["stenosis"] and ste["folder"] == "stenosis" and ste["model"] == "stenosis.onnx"
+    assert ste["card"] == "stenosis.card.json" and seg["card"] == "segments.card.json"
+    assert ste["mode"] == "stenosis" and seg["mode"] == "segments"
+
+
+def test_the_kit_contains_the_sampling_module_byte_identical(kit):
+    out, names = kit
+    assert "mussa_ai/sampling.py" in names
+    with zipfile.ZipFile(out) as z:
+        assert z.read("mussa_ai/sampling.py") == (SRC_AI / "sampling.py").read_bytes()
+
+
+def load_notebook_code():
+    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    return chr(10).join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"), nb
+
+
+def test_notebook_trains_both_models_and_offers_four_files():
+    code, _ = load_notebook_code()
+    assert "--task segments" in code and "--task stenosis" in code
+    for name in ("segments.onnx", "segments.card.json", "stenosis.onnx", "stenosis.card.json"):
+        assert name in code, name
+
+
+def test_fine_tuning_on_own_data_is_off_by_default_and_warns_about_ethics_and_privacy():
+    code, nb = load_notebook_code()
+    assert "USE_OWN_DATA = False" in code
+    cell = next("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code" and "USE_OWN_DATA" in "".join(c["source"]))
+    assert "ethics" in cell.lower() and "de-identified" in cell and "--init-weights" in cell and "--extra-train" in cell
+
+
+def test_every_shell_command_in_the_notebook_is_on_one_line():
+    code, _ = load_notebook_code()
+    assert (chr(92) + chr(10)) not in code                      # no backslash line continuations in "!" commands

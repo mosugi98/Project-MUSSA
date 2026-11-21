@@ -110,6 +110,21 @@ is open. The coronary segments are outlined in colour on the shown frame, with t
 It does not change any score or form, and it does not say which segments are diseased: you still score
 exactly as before. Without a model, the button explains what is missing and nothing else changes.
 
+## 8. Suggest lesions (AI narrowings)
+
+With both AI models installed (segments and stenosis; see `docs/labelling-and-training-guide.md`), you can let
+MUSSA point at possible narrowings. In the scoring panel, pause on the frame that shows the narrowing best and
+click **Suggest lesions** (second toolbar row). A list opens: each line is a possible narrowing, the segment it
+lies in, and the model's score (how strongly the model responds, not a certainty). Nothing is ticked. Tick the ones you agree with and press **Add ... to the
+form**.
+
+What it does: adds a lesion with only the **segment** filled in, ready for you to complete. What it never does:
+choose dominance, answer any question about the lesion, save, score or confirm anything. Candidates outside the
+outlined segments are listed but cannot be added. Your accepts and rejects are recorded in the case store, with the
+model versions, so the AI's accuracy can be checked later.
+
+Without the models the button explains what is missing and nothing else changes.
+
 ## Where your data is
 
 `C:\Users\<you>\MUSSA-data` holds the de-identified images (`store`), folder names, the case store

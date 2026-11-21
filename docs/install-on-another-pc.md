@@ -18,6 +18,7 @@
 |---|---|
 | `MUSSA-portable.zip` | Yes, that is the program |
 | `segments.onnx` + `segments.card.json` | Optional, for AI segments. Put both in `C:\Users\<name>\MUSSA-data\models\` |
+| `stenosis.onnx` + `stenosis.card.json` | Optional, for Suggest lesions. Same folder |
 | `theme.json` | Optional, your saved look. Put it in `C:\Users\<name>\MUSSA-data\` |
 | `cases.sqlite` + `salt.key` | Only if you mean to move your real cases. Copy both together, never one alone |
 | DICOM images | No. Import them on the new PC from the original source |
@@ -27,7 +28,7 @@ A new PC starts with an empty data folder at `C:\Users\<name>\MUSSA-data`, creat
 ## Check that a copy works
 
 Run `MUSSA.exe --selftest` from a terminal in the MUSSA folder, or just open `MUSSA-selftest.txt` that it writes.
-It lists seven checks (Qt, the two DICOM decoders, ONNX Runtime, Pillow, SQLite and the scoring engine) and ends
+It lists nine checks (Qt, the two DICOM decoders, ONNX Runtime, Pillow, SQLite, the scoring engine and the two optional AI models) and ends
 with "Self-test passed" when everything is fine.
 
 ## The other way: from the source code
@@ -35,6 +36,7 @@ with "Self-test passed" when everything is fine.
 Install Python 3.13, copy or clone the project, then in PowerShell:
 
     pip install pydicom numpy PySide6 pylibjpeg pylibjpeg-libjpeg pillow onnxruntime
+    $env:PYTHONPATH = "src"
     python -m cagsyntax.selftest
     .\Run MUSSA.bat
 

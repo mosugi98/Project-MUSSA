@@ -9,7 +9,8 @@ from pathlib import Path
 
 from .scoring import VERSION, CaseResult
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUGGESTION_ACTIONS = ("accepted", "rejected")
 LEVELS = ("resident", "cardiologist")
 
 
@@ -49,6 +50,21 @@ class Confirmation:
 
 
 @dataclass
+class SuggestionEvent:
+    """One AI suggestion the scorer accepted or rejected. `user_id` and `logged_at` are filled in when read."""
+    series_uid: str
+    frame: int
+    segment: str | None
+    score: float
+    pixels: int
+    action: str
+    segment_model: str
+    stenosis_model: str
+    user_id: int | None = None
+    logged_at: str | None = None
+
+
+@dataclass
 class ConfirmedCase:
     study_uid: str
     mrn_hash: str
@@ -69,6 +85,19 @@ CREATE TABLE confirmations(study_uid TEXT PRIMARY KEY REFERENCES cases(study_uid
                            confirmed_at TEXT NOT NULL, form_json TEXT NOT NULL, status TEXT NOT NULL,
                            total REAL, grp TEXT);
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+""" + """
+CREATE TABLE suggestion_events(id INTEGER PRIMARY KEY, study_uid TEXT NOT NULL REFERENCES cases(study_uid),
+                               user_id INTEGER NOT NULL REFERENCES users(id), series_uid TEXT NOT NULL,
+                               frame INTEGER NOT NULL, segment TEXT, score REAL NOT NULL, pixels INTEGER NOT NULL,
+                               action TEXT NOT NULL CHECK(action IN ('accepted','rejected')),
+                               segment_model TEXT NOT NULL, stenosis_model TEXT NOT NULL, logged_at TEXT NOT NULL);
+"""
+_V1_TO_V2 = """
+CREATE TABLE IF NOT EXISTS suggestion_events(id INTEGER PRIMARY KEY, study_uid TEXT NOT NULL REFERENCES cases(study_uid),
+                               user_id INTEGER NOT NULL REFERENCES users(id), series_uid TEXT NOT NULL,
+                               frame INTEGER NOT NULL, segment TEXT, score REAL NOT NULL, pixels INTEGER NOT NULL,
+                               action TEXT NOT NULL CHECK(action IN ('accepted','rejected')),
+                               segment_model TEXT NOT NULL, stenosis_model TEXT NOT NULL, logged_at TEXT NOT NULL);
 """
 
 
@@ -110,6 +139,17 @@ class CaseStore:
                                    ).fetchone() is None:
                 raise StoreError(f"{self.path.name} is damaged (its tables are missing); "
                                  f"it was not changed.")
+            elif version < SCHEMA_VERSION:
+                backup = self.path.with_name(f"{self.path.name}.v{version}.bak")
+                if not backup.exists():                  # keep the pre-upgrade copy: an older MUSSA can still open it
+                    copy = sqlite3.connect(backup)
+                    try:
+                        self._con.backup(copy)
+                    finally:
+                        copy.close()
+                with self._con:                          # upgrade in place; existing rows are untouched
+                    self._con.executescript(_V1_TO_V2)
+                    self._con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except sqlite3.DatabaseError as exc:
             self.close()
             raise StoreError(f"Cannot open {self.path.name}: {exc}. The file may be damaged; "
@@ -246,6 +286,29 @@ class CaseStore:
             "EXISTS(SELECT 1 FROM confirmations f WHERE f.study_uid = c.study_uid) "
             "FROM cases c LEFT JOIN entries e ON e.study_uid = c.study_uid GROUP BY c.study_uid").fetchall()
         return {r[0]: (int(r[1]), int(r[2]), bool(r[3])) for r in rows}
+
+    @_guarded
+    def log_suggestions(self, study_uid: str, user_id: int, events: list[SuggestionEvent]) -> None:
+        """Record which AI suggestions the scorer accepted or rejected (one batch, all or nothing)."""
+        for e in events:
+            if e.action not in SUGGESTION_ACTIONS:
+                raise ValueError(f"A suggestion action must be one of {', '.join(SUGGESTION_ACTIONS)}, not {e.action!r}.")
+        if not events:
+            return
+        now = _now()
+        with self._con:
+            self._con.executemany(
+                "INSERT INTO suggestion_events(study_uid, user_id, series_uid, frame, segment, score, pixels, "
+                "action, segment_model, stenosis_model, logged_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                [(study_uid, user_id, e.series_uid, e.frame, e.segment, e.score, e.pixels, e.action,
+                  e.segment_model, e.stenosis_model, now) for e in events])
+
+    @_guarded
+    def suggestion_events(self, study_uid: str) -> list[SuggestionEvent]:
+        rows = self._con.execute(
+            "SELECT series_uid, frame, segment, score, pixels, action, segment_model, stenosis_model, user_id, "
+            "logged_at FROM suggestion_events WHERE study_uid=? ORDER BY id", (study_uid,)).fetchall()
+        return [SuggestionEvent(*row) for row in rows]
 
     @_guarded
     def get_meta(self, key: str) -> str | None:

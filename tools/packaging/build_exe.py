@@ -4,7 +4,7 @@
     python tools/packaging/build_exe.py --zip      # also writes dist/MUSSA-portable.zip
 
 Needs PyInstaller (pip install pyinstaller) and the app's own dependencies on THIS PC. The result holds no
-patient data and no AI model: copy segments.onnx and segments.card.json to <data folder>\\models separately."""
+patient data and no AI model: copy the four AI model files (segments and stenosis) to <data folder>\\models separately."""
 from __future__ import annotations
 
 import argparse
@@ -60,7 +60,7 @@ def write_readme(folder: Path) -> None:
         "Windows may say 'Windows protected your PC' the first time (the program is not code-signed):\n"
         "click 'More info', then 'Run anyway'.\n\n"
         "Your data is kept in C:\\Users\\<your name>\\MUSSA-data (created on first start).\n"
-        "AI segments (optional): copy segments.onnx and segments.card.json into\n"
+        "AI (optional): copy segments.onnx, segments.card.json, stenosis.onnx and stenosis.card.json into\n"
         "C:\\Users\\<your name>\\MUSSA-data\\models\\ . Without them everything else still works.\n\n"
         "To check this copy works: run  MUSSA.exe --selftest  and read MUSSA-selftest.txt.\n"
         "Do not copy cases.sqlite or salt.key to another PC unless you mean to move your real cases;\n"
