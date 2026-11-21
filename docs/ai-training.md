@@ -34,8 +34,8 @@ exactly as before and the **AI segments** button explains what is missing.
    On Kaggle, turn on the GPU accelerator and Internet in the notebook settings and add `mussa-training-kit.zip` as a
    dataset (Add data > Upload); the notebook finds it under `/kaggle/input`. On Colab it asks you to upload the zip.
 3. Run all cells. The notebook installs `segmentation-models-pytorch`, downloads ARCADE from Zenodo and
-   checks its md5, asks you to upload `mussa-training-kit.zip`, trains (30 epochs; try adding `--smoke` to the
-   training command first for a one-minute pipeline check), and offers two files for download.
+   checks its md5, asks you to upload `mussa-training-kit.zip`, trains (up to 60 epochs, stopping early when the validation
+   score stops improving; try adding `--smoke` to the training command first for a one-minute pipeline check), and offers two files for download.
    The notebook also checks the exported model by running it once before offering the download. The best weights are
    saved as `segments_best.pt` before the ONNX export, so a failed export does not lose the training run.
 4. Copy both downloaded files, `segments.onnx` and `segments.card.json`, into
@@ -81,3 +81,19 @@ The message names the problem: no file in `MUSSA-data\models\`, a missing or unr
 a file that is not a valid ONNX model, a card that lists different classes than the app's 25 segments, or a
 model whose output does not have 25 channels at the card's size. The app checks every model by running it once
 when it loads, so a wrong model is refused instead of drawing a wrong overlay.
+
+## Improving a weak model: per-segment cut-offs
+
+A first model often never predicts the rare segments because their probabilities stay below 0.5. Tune a
+cut-off for each segment on the validation split (not the test split), then judge on the test split:
+
+    python tools/ai/tune_thresholds.py --model <models folder>\segments.onnx --split arcade/arcade/syntax/val
+    python tools/ai/tune_thresholds.py --model <models folder>\segments.onnx --split arcade/arcade/syntax/val --write
+    python tools/ai/evaluate_segmentation.py --model <models folder>\segments.onnx --split arcade/arcade/syntax/test
+
+Without `--write` nothing is changed. With it the cut-offs are saved in `segments.card.json` and the app uses
+them automatically. If you ever replace the model, tune again: cut-offs belong to one model.
+
+The training script also changed: the loss no longer rewards empty predictions (the first version let the model
+collapse to "nothing" for rare segments around epoch 15), positives are weighted (`--pos-weight`), and training
+stops early (`--patience`).

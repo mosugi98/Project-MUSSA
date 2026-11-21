@@ -73,10 +73,11 @@ def test_training_script_parses_and_lists_every_option_without_torch_installed()
     compile(script.read_text(encoding="utf-8"), str(script), "exec")
     mod = load_module(script, "train_segmentation")
     help_text = mod.build_parser().format_help()
-    for option in ("--arcade", "--out", "--epochs", "--batch-size", "--lr", "--size", "--encoder", "--smoke"):
+    for option in ("--arcade", "--out", "--epochs", "--batch-size", "--lr", "--size", "--encoder", "--smoke", "--patience", "--pos-weight"):
         assert option in help_text, option
     args = mod.build_parser().parse_args(["--arcade", "a", "--out", "o"])
-    assert (args.epochs, args.batch_size, args.lr, args.size, args.encoder) == (30, 8, 3e-4, 512, "resnet34")
+    assert (args.epochs, args.batch_size, args.lr, args.size, args.encoder) == (60, 8, 3e-4, 512, "resnet34")
+    assert (args.patience, args.pos_weight) == (15, 5.0)
     smoke = mod.apply_smoke(mod.build_parser().parse_args(["--arcade", "a", "--out", "o", "--smoke"]))
     assert (smoke.epochs, smoke.size, smoke.limit) == (1, 128, 8)
 
