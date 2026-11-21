@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ..scoring.tables import SEGMENT_IDS, weight
+from . import theme as T
 
 CANVAS_W, CANVAS_H = 560, 440
 HIT_RADIUS = 14.0
@@ -40,6 +41,10 @@ class SegmentTree(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        import weakref
+        ref = weakref.ref(self)
+        token = T.subscribe(lambda _t: ref() and ref().update())
+        self.destroyed.connect(lambda *_a, t=token: T.unsubscribe(t))
         self._dominance: str | None = None
         self._selected: list[str] = []
         self._first: str | None = None
@@ -115,7 +120,8 @@ class SegmentTree(QWidget):
         s, ox, oy = self._scale()
         p.translate(ox, oy)
         p.scale(s, s)
-        accent = QColor("#c62828")
+        th = T.get_theme()
+        accent = QColor(th.primary)
         idle = pal.mid().color()
         font = QFont(self.font())
         font.setPixelSize(10)
@@ -135,10 +141,10 @@ class SegmentTree(QWidget):
             p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
             r = 13 if len(seg) > 2 else 11
-            ring = QPen(QColor("#ffb300") if seg == self._first else (accent if on else idle), 3 if seg == self._first else 2)
+            ring = QPen(QColor(th.accent) if seg == self._first else (accent if on else idle), 3 if seg == self._first else 2)
             p.setPen(ring)
-            p.setBrush(accent if on else pal.base())
+            p.setBrush(accent if on else QColor(th.surface))
             p.drawEllipse(QPointF(cx, cy), r, r)
-            p.setPen(QColor("white") if on else pal.text().color())
+            p.setPen(QColor(th.on_primary) if on else QColor(th.text))
             p.drawText(QRectF(cx - r, cy - r, 2 * r, 2 * r), Qt.AlignmentFlag.AlignCenter, seg)
         p.end()
