@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--init-weights", default=None, help="start from earlier weights (segments_best.pt) to fine-tune")
     p.add_argument("--extra-train", action="append", default=[],
                    help="an additional COCO split folder to train on, e.g. your own labelled cases (repeatable)")
+    p.add_argument("--extra-val", action="append", default=[],
+                   help="an additional COCO split folder to validate on (your own val folder); repeatable")
     p.add_argument("--epochs", type=int, default=60)
     p.add_argument("--patience", type=int, default=15, help="stop after this many epochs without a better validation Dice (0 = never stop early)")
     p.add_argument("--pos-weight", type=float, default=5.0, help="extra weight on positive pixels in the cross-entropy (segments are thin)")
@@ -134,6 +136,11 @@ def segmentation_loss(logits, y, torch, pos_weight: float = 5.0):
     return bce + ((1.0 - dice[present]).mean() if bool(present.any()) else logits.sum() * 0.0)
 
 
+def effective_encoder_weights(args) -> str:
+    """What the encoder really started from, for the model card."""
+    return f"from {args.init_weights}" if args.init_weights else args.encoder_weights
+
+
 def should_stop(val_history: list[float], patience: int) -> bool:
     """True when the best validation score is `patience` or more epochs old (patience 0 never stops)."""
     if patience <= 0 or not val_history:
@@ -181,7 +188,9 @@ def train(args: argparse.Namespace) -> dict:
 
     train_sets = [SegmentationData(data_root / "train", args.size, True, args.limit, cfg["mode"])]
     train_sets += [SegmentationData(Path(extra), args.size, True, args.limit, cfg["mode"]) for extra in args.extra_train]
-    val_set = SegmentationData(data_root / "val", args.size, False, args.limit, cfg["mode"])
+    val_sets = [SegmentationData(data_root / "val", args.size, False, args.limit, cfg["mode"])]
+    val_sets += [SegmentationData(Path(extra), args.size, False, args.limit, cfg["mode"]) for extra in args.extra_val]
+    val_set = val_sets[0] if len(val_sets) == 1 else ConcatDataset(val_sets)
     train_set = train_sets[0] if len(train_sets) == 1 else ConcatDataset(train_sets)
     workers = 0 if args.smoke else 2
     sampler, shuffle = None, True
@@ -265,12 +274,14 @@ def train(args: argparse.Namespace) -> dict:
         "input_size": args.size, "classes": list(names),
         "preprocess": "ai/preprocess.py v1: per-frame min-max, resize, mean 0.5 std 0.5",
         "val_mean_dice": best, "test_mean_dice": test_dice, "per_segment_test_dice": test_scores,
+        "per_class_test_dice": test_scores,
         "training": {"epochs": args.epochs, "epochs_run": len(history), "patience": args.patience,
                      "pos_weight": args.pos_weight, "rare_power": args.rare_power,
                      "init_weights": args.init_weights, "extra_train": list(args.extra_train),
                      "loss": "bce(pos_weight) + batch dice over present classes",
                      "batch_size": args.batch_size, "lr": args.lr,
-                     "encoder": args.encoder, "encoder_weights": args.encoder_weights, "seed": SEED,
+                     "encoder": args.encoder, "encoder_weights": effective_encoder_weights(args), "seed": SEED,
+                     "extra_val": list(args.extra_val),
                      "device": device, "history": history},
         "notice": "Educational research model trained on public ARCADE data. Not a certified medical "
                   "device; suggestions only, never a diagnosis.",

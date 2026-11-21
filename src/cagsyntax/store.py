@@ -140,6 +140,13 @@ class CaseStore:
                 raise StoreError(f"{self.path.name} is damaged (its tables are missing); "
                                  f"it was not changed.")
             elif version < SCHEMA_VERSION:
+                backup = self.path.with_name(f"{self.path.name}.v{version}.bak")
+                if not backup.exists():                  # keep the pre-upgrade copy: an older MUSSA can still open it
+                    copy = sqlite3.connect(backup)
+                    try:
+                        self._con.backup(copy)
+                    finally:
+                        copy.close()
                 with self._con:                          # upgrade in place; existing rows are untouched
                     self._con.executescript(_V1_TO_V2)
                     self._con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

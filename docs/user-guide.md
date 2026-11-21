@@ -115,7 +115,7 @@ exactly as before. Without a model, the button explains what is missing and noth
 With both AI models installed (segments and stenosis; see `docs/labelling-and-training-guide.md`), you can let
 MUSSA point at possible narrowings. In the scoring panel, pause on the frame that shows the narrowing best and
 click **Suggest lesions** (second toolbar row). A list opens: each line is a possible narrowing, the segment it
-lies in, and the model's confidence. Nothing is ticked. Tick the ones you agree with and press **Add ... to the
+lies in, and the model's score (how strongly the model responds, not a certainty). Nothing is ticked. Tick the ones you agree with and press **Add ... to the
 form**.
 
 What it does: adds a lesion with only the **segment** filled in, ready for you to complete. What it never does:

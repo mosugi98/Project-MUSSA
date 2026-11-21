@@ -10,8 +10,8 @@ from .widgets import GlossyButton
 def describe(s: Suggestion) -> str:
     size = f"{s.pixels} px"
     if s.segment is None:
-        return f"Possible narrowing, not in any outlined segment  -  confidence {round(s.score * 100)}%  -  {size}"
-    return f"Possible narrowing in segment {s.segment}  -  confidence {round(s.score * 100)}%  -  {size}"
+        return f"Possible narrowing, not in any outlined segment  -  model score {round(s.score * 100)}%  -  {size}"
+    return f"Possible narrowing in segment {s.segment}  -  model score {round(s.score * 100)}%  -  {size}"
 
 
 class SuggestDialog(QDialog):

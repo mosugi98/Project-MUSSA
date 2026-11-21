@@ -41,9 +41,11 @@ def _to_8bit(frame: np.ndarray) -> np.ndarray:
     return np.round((data - low) / (high - low) * 255.0).astype(np.uint8)
 
 
-def export_frames(store_dir: Path, out_dir: Path, frame="middle") -> FramesResult:
+def export_frames(store_dir: Path, out_dir: Path, frame="middle", include_burned_in: bool = False) -> FramesResult:
     """Write PNG frames of every series in the MUSSA store. `frame` is "middle", "all" or a frame number.
-    Also writes frames.csv (file, series_uid, study_uid, frame) so labelled images can be traced and split by study."""
+    Also writes frames.csv (file, series_uid, study_uid, frame) so labelled images can be traced and split by study.
+    Series whose DICOM does not say "no burned-in annotation" are skipped (patient text may be inside the pixels)
+    unless `include_burned_in` is set after the scorer has looked at them."""
     store_dir, out_dir = Path(store_dir), Path(out_dir)
     if out_dir.exists() and any(out_dir.iterdir()):
         raise ValueError(f"{out_dir} is not empty. Choose a new folder so nothing is overwritten.")
@@ -52,9 +54,15 @@ def export_frames(store_dir: Path, out_dir: Path, frame="middle") -> FramesResul
     for path in sorted(store_dir.glob("*.dcm")):
         try:
             series = read_xa(path)
-            study_uid = read_header(path).study_uid
+            header = read_header(path)
+            study_uid = header.study_uid
         except (ImportRejected, Exception) as exc:                   # one bad file must not stop the rest
             result.skipped.append((path.name, str(exc)))
+            continue
+        if header.burned_in_unclear and not include_burned_in:
+            result.skipped.append((path.name, "may contain burned-in patient text in the pixels (the DICOM does not "
+                                              "say it has none). Check the images by eye, then export again with "
+                                              "--include-burned-in"))
             continue
         count = len(series.frames)
         if frame == "all":
@@ -94,6 +102,16 @@ class LabelReport:
         return not self.problems
 
 
+def find_image(root: Path, file_name: str) -> Path | None:
+    """images/<file_name>, or inside any subfolder of images/ (CVAT keeps its images in images/<subset>/)."""
+    base = Path(root) / "images"
+    direct = base / file_name
+    if direct.is_file():
+        return direct
+    matches = sorted(p for p in base.rglob(Path(file_name).name) if p.is_file()) if base.is_dir() else []
+    return matches[0] if matches else None
+
+
 def find_annotation_file(root: Path) -> Path | None:
     folder = Path(root) / "annotations"
     for name in (f"{Path(root).name}.json", "instances_default.json"):
@@ -101,6 +119,10 @@ def find_annotation_file(root: Path) -> Path | None:
             return folder / name
     found = sorted(folder.glob("*.json")) if folder.is_dir() else []
     return found[0] if len(found) == 1 else None
+
+
+def _numbers(poly) -> bool:
+    return isinstance(poly, list) and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in poly)
 
 
 def check_coco(root: Path) -> LabelReport:
@@ -114,24 +136,44 @@ def check_coco(root: Path) -> LabelReport:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         images, annotations, categories = data["images"], data["annotations"], data["categories"]
+        names = {c["id"]: c["name"] for c in categories}
     except (OSError, ValueError, KeyError, TypeError) as exc:
         report.problems.append(f"{path.name} cannot be read as a COCO file ({exc}).")
         return report
-    names = {c["id"]: c["name"] for c in categories}
-    for category_id, name in names.items():
+    for name in names.values():
         if name not in VALID_LABELS:
             tidy = str(name).strip().lower()
             if tidy in VALID_LABELS:
                 report.problems.append(f"The label {name!r} must be written exactly as {tidy!r} (no spaces or capitals).")
             else:
                 report.problems.append(f"The label {name!r} is not one of the 25 SYNTAX segment names or 'stenosis'.")
-    by_id = {im["id"]: im for im in images}
-    report.images = len(images)
+    by_id = {}
     for im in images:
-        if not (root / "images" / im["file_name"]).is_file():
+        if not isinstance(im, dict) or not all(k in im for k in ("id", "file_name", "width", "height")):
+            report.problems.append("An image entry in the annotation file is incomplete (it needs id, file_name, "
+                                   "width and height).")
+            continue
+        by_id[im["id"]] = im
+        report.images += 1
+        found = find_image(root, im["file_name"])
+        if found is None:
             report.problems.append(f"Image file {im['file_name']} is listed but missing from the images folder.")
+            continue
+        try:
+            with Image.open(found) as picture:
+                real = picture.size
+        except OSError:
+            report.problems.append(f"Image file {im['file_name']} cannot be opened as an image.")
+            continue
+        if real != (im["width"], im["height"]):
+            report.problems.append(f"Image {im['file_name']} has a different size from the annotation file: the picture is "
+                                   f"{real[0]}x{real[1]} pixels, the file says {im['width']}x{im['height']}, so the "
+                                   "labels would not line up with it.")
     labelled, outside = set(), 0
     for ann in annotations:
+        if not isinstance(ann, dict):
+            report.problems.append("A label entry in the annotation file is malformed.")
+            continue
         image = by_id.get(ann.get("image_id"))
         if image is None:
             report.problems.append(f"Label {ann.get('id')} points at an image that is not in the file.")
@@ -144,7 +186,10 @@ def check_coco(root: Path) -> LabelReport:
             report.problems.append(f"Label {ann.get('id')} on {image['file_name']} is a brush or bitmap mask; "
                                    "draw polygons instead.")
             continue
-        if not seg or any(len(poly) < 6 or len(poly) % 2 for poly in seg):
+        if not seg or not all(_numbers(poly) for poly in seg):
+            report.problems.append(f"Label {ann.get('id')} on {image['file_name']} has coordinates that are not numbers.")
+            continue
+        if any(len(poly) < 6 or len(poly) % 2 for poly in seg):
             report.problems.append(f"Label {ann.get('id')} on {image['file_name']} has a polygon with fewer than 3 points.")
             continue
         report.annotations += 1
@@ -155,11 +200,18 @@ def check_coco(root: Path) -> LabelReport:
         ys = [v for poly in seg for v in poly[1::2]]
         if max(xs) > image["width"] * 1.05 or max(ys) > image["height"] * 1.05 or min(xs) < 0 or min(ys) < 0:
             outside += 1
-    report.unlabelled_images = sum(1 for im in images if im["id"] not in labelled)
+    report.unlabelled_images = sum(1 for i in by_id if i not in labelled)
     report.never_labelled = [s for s in SEGMENT_NAMES if s not in report.per_category]
     if report.unlabelled_images:
         report.warnings.append(f"{report.unlabelled_images} image(s) have no labels. That is fine for stenosis training "
                                "(a frame with no narrowing), but check it is on purpose for segments.")
+    if STENOSIS in report.per_category:
+        with_stenosis = {a["image_id"] for a in annotations if isinstance(a, dict) and names.get(a.get("category_id")) == STENOSIS}
+        segment_only = [i for i in labelled if i not in with_stenosis]
+        if segment_only:
+            report.warnings.append(f"{len(segment_only)} image(s) have segment labels but no stenosis label. The stenosis "
+                                   "model learns from them that there is no narrowing: if a narrowing is visible there, "
+                                   "label it.")
     if outside:
         report.warnings.append(f"{outside} polygon(s) run outside the image; the parts outside are cut off.")
     if report.images < MIN_USEFUL_IMAGES:
@@ -217,30 +269,51 @@ def split_coco(source: Path, out_root: Path, val_fraction: float = 0.2, seed: st
     if path is None:
         raise ValueError(f"No annotation file found in {source / 'annotations'}.")
     data = json.loads(path.read_text(encoding="utf-8"))
+    located, missing, seen_names = {}, [], {}
+    for im in data["images"]:
+        found = find_image(source, im["file_name"])
+        if found is None:
+            missing.append(im["file_name"])
+            continue
+        flat = Path(im["file_name"]).name
+        if seen_names.setdefault(flat, im["file_name"]) != im["file_name"]:
+            raise ValueError(f"Two images share the file name {flat}; rename one in the labelling tool.")
+        located[im["id"]] = found
+    if missing:
+        raise ValueError(f"{len(missing)} image file(s) are listed but missing, for example {', '.join(missing[:3])}. "
+                         "Nothing was written.")
     studies = _group_of(source)
     groups: dict[str, list] = {}
     for im in data["images"]:
-        groups.setdefault(studies.get(im["file_name"], im["file_name"]), []).append(im)
+        groups.setdefault(studies.get(im["file_name"], studies.get(Path(im["file_name"]).name, im["file_name"])), []).append(im)
     if len(groups) < 2:
         raise ValueError("Splitting needs at least 2 studies (or 2 images) to put some in train and some in val.")
     ranked = sorted(groups, key=lambda g: hashlib.sha256(f"{seed}:{g}".encode()).hexdigest())
     n_val = min(max(1, round(val_fraction * len(ranked))), len(ranked) - 1)
     members = {"val": ranked[:n_val], "train": ranked[n_val:]}
     counts = {}
-    for split, keys in members.items():
-        chosen = [im for key in sorted(keys) for im in groups[key]]
-        new_ids = {im["id"]: i for i, im in enumerate(chosen, 1)}
-        annotations = []
-        for ann in data["annotations"]:
-            if ann["image_id"] in new_ids:
-                annotations.append({**ann, "id": len(annotations) + 1, "image_id": new_ids[ann["image_id"]]})
-        (out_root / split / "images").mkdir(parents=True)
-        (out_root / split / "annotations").mkdir()
-        for im in chosen:
-            shutil.copy2(source / "images" / im["file_name"], out_root / split / "images" / im["file_name"])
-        doc = {"images": [{**im, "id": new_ids[im["id"]]} for im in chosen], "annotations": annotations,
-               "categories": data["categories"]}
-        (out_root / split / "annotations" / f"{split}.json").write_text(json.dumps(doc), encoding="utf-8")
-        counts[split] = (len(chosen), len(annotations))
+    existed = out_root.exists()
+    try:
+        for split, keys in members.items():
+            chosen = [im for key in sorted(keys) for im in groups[key]]
+            new_ids = {im["id"]: i for i, im in enumerate(chosen, 1)}
+            annotations = []
+            for ann in data["annotations"]:
+                if ann["image_id"] in new_ids:
+                    annotations.append({**ann, "id": len(annotations) + 1, "image_id": new_ids[ann["image_id"]]})
+            (out_root / split / "images").mkdir(parents=True)
+            (out_root / split / "annotations").mkdir()
+            for im in chosen:
+                shutil.copy2(located[im["id"]], out_root / split / "images" / Path(im["file_name"]).name)
+            doc = {"images": [{**im, "id": new_ids[im["id"]], "file_name": Path(im["file_name"]).name} for im in chosen],
+                   "annotations": annotations, "categories": data["categories"]}
+            (out_root / split / "annotations" / f"{split}.json").write_text(json.dumps(doc), encoding="utf-8")
+            counts[split] = (len(chosen), len(annotations))
+    except Exception:
+        for split in members:                                  # never leave a half-written train or val folder
+            shutil.rmtree(out_root / split, ignore_errors=True)
+        if not existed:
+            shutil.rmtree(out_root, ignore_errors=True)
+        raise
     return SplitResult(train_images=counts["train"][0], val_images=counts["val"][0],
                        train_annotations=counts["train"][1], val_annotations=counts["val"][1], groups=len(groups))

@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from .preprocess import preprocess
-from .segmenter import ModelCard, ModelUnavailable
+from .segmenter import ModelCard, ModelUnavailable, file_identity
 
 CLASS_NAME = "stenosis"
 DEFAULT_THRESHOLD = 0.5
@@ -107,9 +107,10 @@ def _read_card(model_path: Path) -> ModelCard:
 class StenosisFinder:
     """The stenosis model (ONNX, CPU)."""
 
-    def __init__(self, session, card: ModelCard):
+    def __init__(self, session, card: ModelCard, model_id: str | None = None):
         self._session = session
         self.card = card
+        self.model_id = model_id or card.trained_at
         self._input_name = session.get_inputs()[0].name
         self.threshold = float(card.thresholds.get(CLASS_NAME, DEFAULT_THRESHOLD))
 
@@ -135,7 +136,7 @@ class StenosisFinder:
         if tuple(result.shape) != (1, 1, size, size):
             raise ModelUnavailable(f"The model produces output of shape {tuple(result.shape)}; "
                                    f"(1, 1, {size}, {size}) is required for a stenosis model.")
-        return cls(session, card)
+        return cls(session, card, file_identity(model_path, card.trained_at))
 
     def probability(self, frame: np.ndarray) -> np.ndarray:
         """Float32 (H, W) stenosis probability in the frame's own size. The input is not modified."""

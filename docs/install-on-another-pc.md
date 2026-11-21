@@ -36,6 +36,7 @@ with "Self-test passed" when everything is fine.
 Install Python 3.13, copy or clone the project, then in PowerShell:
 
     pip install pydicom numpy PySide6 pylibjpeg pylibjpeg-libjpeg pillow onnxruntime
+    $env:PYTHONPATH = "src"
     python -m cagsyntax.selftest
     .\Run MUSSA.bat
 

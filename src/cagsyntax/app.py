@@ -829,9 +829,15 @@ class MainWindow(QMainWindow):
     def suggest_lesions(self) -> list[Suggestion] | None:
         """Run both AI models on the shown frame, let the scorer tick the narrowings they agree with and add
         those as segments-only lesions. Returns the ticked suggestions, [] when nothing was found, or None when
-        it could not run or was cancelled. Every accept and reject is recorded. Nothing is scored by the AI."""
+        it could not run or was cancelled. Every accept and reject is recorded; cancelling the list records
+        nothing. Nothing is scored by the AI. It refuses when the series on screen is not a series of the open
+        case, so one patient's findings can never reach another patient's form."""
         if self.store is None or self._scoring_study is None:
             self._say("Open a case with Score case first.")
+            return None
+        if self.scoring_dock.isHidden():
+            self._say("The scoring panel is hidden. Open it with Score case first, so you can see the form the "
+                      "suggestions would go into.")
             return None
         user = self.current_user()
         if user is None:
@@ -847,6 +853,18 @@ class MainWindow(QMainWindow):
         if frame is None:
             self._say("Open a series first, then pick the frame that shows the narrowing best.")
             return None
+        try:
+            shown_study = self._selected_study()
+        except ImportRejected:
+            shown_study = None
+        if shown_study != self._scoring_study:
+            self._say("The series on screen belongs to a different case than the open form. Select a series of the "
+                      "open case, or press Score case for this one, then try again.")
+            return None
+        if self.cine.player is not None and self.cine.player.playing:
+            self._say("Pause the cine on the frame you want analysed, then click Suggest lesions.")
+            return None
+        frame_number = self.cine.frame_index()                  # the frame the AI sees, kept for the log
         self.statusBar().showMessage("Looking for narrowings (AI), please wait...")
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
@@ -867,31 +885,48 @@ class MainWindow(QMainWindow):
             self._say("No suggestions added.")
             return None
         self._add_suggested_lesions(chosen)
-        self._log_suggestions(user, suggestions, chosen)
+        self._log_suggestions(user, suggestions, chosen, frame_number)
         return chosen
 
     def _add_suggested_lesions(self, chosen: list[Suggestion]) -> None:
         case = self.panel.case()
-        present = {seg for les in case.lesions for seg in les.segments}
-        new = [les for les in lesions_from(chosen) if les.segments[0] not in present]
-        if not new:
+        present = {seg for les in case.lesions for seg in les.segments} | set(case.diffuse_segments)
+        wanted = [les for les in lesions_from(chosen) if les.segments[0] not in present]
+        if not wanted:
             self._say("No new lesions added" + (" (those segments are already in the form)." if chosen else "."))
             return
         kept = [les for les in case.lesions if les != Lesion(segments=[])]      # drop the empty placeholder only
-        new = new[:max(MAX_LESIONS - len(kept), 0)]
+        new = wanted[:max(MAX_LESIONS - len(kept), 0)]
+        over = len(wanted) - len(new)
         removed = self.panel.set_case(Case(dominance=case.dominance, scoring_dominance=case.scoring_dominance,
                                            lesions=kept + new, diffuse_segments=case.diffuse_segments))
+        for index in range(len(self.panel.case().lesions) - 1, len(kept) - 1, -1):
+            if not self.panel.case().lesions[index].segments:                   # the segment does not exist here
+                self.panel.remove_lesion(index)
+        added = len(self.panel.case().lesions) - len(kept)
+        if not self.panel.case().lesions:
+            self.panel.add_lesion()                                             # the form always has a lesion to fill
+        notes = []
+        if removed:
+            notes.append(f"Not valid for this dominance and removed: {', '.join(removed)}.")
+        if over:
+            notes.append(f"{over} more were not added: a case holds at most {MAX_LESIONS} lesions (the limit).")
+        note = (" " + " ".join(notes)) if notes else ""
+        if added <= 0:
+            self._say("No lesions added." + note)
+            return
         self.panel.select_lesion(len(kept))
-        note = f" Not valid for this dominance and removed: {', '.join(removed)}." if removed else ""
-        self._say(f"Added {len(new)} suggested lesion(s) from the AI. Check each one and fill in the rest of the "
+        self._say(f"Added {added} suggested lesion(s) from the AI. Check each one and fill in the rest of the "
                   f"form yourself; it is not saved until you press Save score.{note}")
 
-    def _log_suggestions(self, user: User, shown: list[Suggestion], chosen: list[Suggestion]) -> None:
-        events = [SuggestionEvent(series_uid=self._shown_uid or "", frame=self.cine.frame_index(), segment=s.segment,
+    def _log_suggestions(self, user: User, shown: list[Suggestion], chosen: list[Suggestion], frame: int) -> None:
+        segment_model = getattr(self.segmenter, "model_id", self.segmenter.card.trained_at)
+        stenosis_model = getattr(self.stenosis, "model_id", self.stenosis.card.trained_at)
+        events = [SuggestionEvent(series_uid=self._shown_uid or "", frame=frame, segment=s.segment,
                                   score=s.score, pixels=s.pixels,
                                   action="accepted" if any(s is c for c in chosen) else "rejected",
-                                  segment_model=f"segments {self.segmenter.card.trained_at}",
-                                  stenosis_model=f"stenosis {self.stenosis.card.trained_at}") for s in shown]
+                                  segment_model=f"segments {segment_model}",
+                                  stenosis_model=f"stenosis {stenosis_model}") for s in shown]
         try:
             self.store.log_suggestions(self._scoring_study[0], user.id, events)
         except StoreError as exc:

@@ -44,10 +44,16 @@ before each export, so a failed export loses nothing.
 
     segments.onnx   segments.card.json   stenosis.onnx   stenosis.card.json
 
-**Step 5. Check the install.** Start MUSSA once, or run `python -m cagsyntax.selftest`. The two AI lines should
-say the models loaded.
+**Step 5. Check the install.** Start MUSSA once, or run the self-test from the project folder:
 
-**Step 6. Measure the models** (so you know how far to trust them):
+    $env:PYTHONPATH = "src"
+    python -m cagsyntax.selftest
+
+The two AI lines should say the models loaded. (With the portable program, run `MUSSA.exe --selftest` instead.)
+
+**Step 6. Measure the models** (so you know how far to trust them). This needs the ARCADE images on your PC:
+download `arcade.zip` from https://zenodo.org/records/10390295 and unzip it into the project folder so that
+`arcade\arcade\syntax\test` exists. Then:
 
     python tools/ai/evaluate_segmentation.py --model "C:\Users\<you>\MUSSA-data\models\segments.onnx" --split arcade/arcade/syntax/test
 
@@ -70,7 +76,7 @@ find it. The stenosis model's own test score is stored in `stenosis.card.json` (
 5. The ticked segments appear as lesions with only the segment filled in. **You** answer dominance, occlusion,
    bifurcation and every other question, then press **Save score**.
 
-MUSSA records every accept and reject (which segment, confidence, frame, which model versions). This log is how
+MUSSA records every accept and reject (which segment, model score, frame, which model files). This log is how
 you will later see where the AI is right and wrong.
 
 ---
@@ -93,7 +99,9 @@ original DICOM files.
     python tools/labelling/mussa_labels.py frames --store "C:\Users\<you>\MUSSA-data\store" --out "D:\labelling\png"
 
 This writes one PNG per series (the middle frame) and `frames.csv`, which links each PNG to its study. The names
-contain no patient information. Use `--frame all` for every frame, or `--frame 12` for a chosen frame. Choose the
+contain no patient information. **The pixels might**: some machines burn the patient's name or ID into the image.
+Series that are not marked as free of burned-in text are therefore **skipped** and listed. Open those images,
+look at the corners, and only if they are clean run the command again with `--include-burned-in`. Use `--frame all` for every frame, or `--frame 12` for a chosen frame. Choose the
 frame where the vessels are best filled with contrast; the middle frame is only a starting point.
 
 **Step 3. Set up the labelling tool (CVAT).** CVAT is free. **Run it on your own PC** (CVAT's Docker install
@@ -117,7 +125,8 @@ Rules that keep the labels useful:
 - Label rare branches too (16a, 16b, 16c, 9a, 10, 12, 12b, 14, 14a, 14b, 15); they are where the models are weakest.
 
 **Step 5. Export.** Choose **Export dataset > COCO 1.0**, tick **Save images**, and unzip into a new folder, for
-example `D:\labelling\cvat-export`. It should contain `images\` and `annotations\instances_default.json`.
+example `D:\labelling\cvat-export`. It should contain `images\` (the pictures may sit in a subfolder such as `images\default\`; that is fine) and
+`annotations\instances_default.json`.
 
 **Step 6. Check the labels.** This explains every problem in plain words:
 

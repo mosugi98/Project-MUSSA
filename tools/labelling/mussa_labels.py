@@ -26,6 +26,8 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--store", type=Path, required=True, help="the MUSSA store folder (MUSSA-data\\store)")
     f.add_argument("--out", type=Path, required=True, help="a new, empty folder for the PNG files")
     f.add_argument("--frame", default="middle", help="middle (default), all, or a frame number")
+    f.add_argument("--include-burned-in", action="store_true",
+                   help="also export series that may have patient text burned into the pixels (check them first)")
     c = sub.add_parser("check", help="check a labelled folder")
     c.add_argument("--folder", type=Path, required=True, help="folder with images/ and annotations/")
     s = sub.add_parser("split", help="split a labelled folder into train and val")
@@ -36,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "frames":
             frame = args.frame if args.frame in ("middle", "all") else int(args.frame)
-            result = export_frames(args.store, args.out, frame)
+            result = export_frames(args.store, args.out, frame, args.include_burned_in)
             print(f"Wrote {len(result.written)} image(s) to {args.out} (frames.csv lists where each came from).")
             for name, reason in result.skipped:
                 print(f"  skipped {name}: {reason}")
