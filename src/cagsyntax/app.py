@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog
 
 from .ai.overlay import render_overlay, segment_labels
 from .ai.segmenter import ModelUnavailable, Segmenter
+from .ai.stenosis import StenosisFinder
+from .ai.suggest import Suggestion, lesions_from, suggest
 from .cases import study_of
 from .dicom_import.deidentify import get_or_create_salt
 from .dicom_import.importer import import_path
@@ -27,10 +29,12 @@ from .form_state import case_from_json, case_to_json
 from .library import DEFAULT_LABEL, Library
 from .report import disagreement_report
 from .scoring import Case, Lesion
-from .store import LEVELS, CaseStore, Confirmation, Entry, StoreError, User
+from .scoring.validate import MAX_LESIONS
+from .store import LEVELS, CaseStore, Confirmation, Entry, StoreError, SuggestionEvent, User
 from .ui import theme as T
 from .ui.appearance_dialog import AppearanceDialog
 from .ui.scoring_panel import ScoringPanel
+from .ui.suggest_dialog import SuggestDialog
 from .ui.widgets import GlossyButton, install_theme
 from .viewer.widget import CineWidget
 
@@ -137,6 +141,8 @@ class MainWindow(QMainWindow):
         self._scoring_study: tuple[str, str] | None = None     # (study uid, MRN hash) of the open case
         self.segmenter = segmenter                              # AI segment model, if installed
         self.segmenter_error = ""
+        self.stenosis: StenosisFinder | None = None     # stenosis model, if installed
+        self.stenosis_error = ""
         self._ai_on = False
         self._ai_cache: dict = {}
         self._ai_drawn_key = None                 # (series uid, frame index) of the overlay on screen
@@ -152,6 +158,7 @@ class MainWindow(QMainWindow):
             self.store_error = str(exc)                        # viewer still works; scoring is off
         if self.segmenter is None:
             self._load_segmenter()
+        self._load_stenosis()
         self.folder_combo = QComboBox()
         self.item_list = QListWidget()
         self.item_list.setIconSize(QSize(14, 14))
@@ -217,6 +224,7 @@ class MainWindow(QMainWindow):
         self.user_combo.currentIndexChanged.connect(self._on_user_changed)
         bar.addWidget(self.user_combo)
         for text, slot in (("Add scorer", self._ask_add_user), ("Score case", self.score_selected_case),
+                           ("Suggest lesions", self.suggest_lesions),
                            ("Disagreements", self._show_disagreements_dialog),
                            ("Export dataset", self._ask_export)):
             act = QAction(text, self)
@@ -802,6 +810,92 @@ class MainWindow(QMainWindow):
             self.segmenter = Segmenter.load(path)
         except ModelUnavailable as exc:
             self.segmenter_error = str(exc)
+
+    def _load_stenosis(self) -> None:
+        path = self.data_dir / "models" / "stenosis.onnx"
+        if not path.exists():
+            self.stenosis_error = f"No stenosis model installed (expected at {path})."
+            return
+        try:
+            self.stenosis = StenosisFinder.load(path)
+        except ModelUnavailable as exc:
+            self.stenosis_error = str(exc)
+
+    def _choose_suggestions(self, suggestions: list[Suggestion]) -> list[Suggestion] | None:
+        """Show the suggestions and return the ticked ones (None if the scorer cancels)."""
+        dialog = SuggestDialog(suggestions, self)
+        return dialog.chosen() if dialog.exec() == SuggestDialog.DialogCode.Accepted else None
+
+    def suggest_lesions(self) -> list[Suggestion] | None:
+        """Run both AI models on the shown frame, let the scorer tick the narrowings they agree with and add
+        those as segments-only lesions. Returns the ticked suggestions, [] when nothing was found, or None when
+        it could not run or was cancelled. Every accept and reject is recorded. Nothing is scored by the AI."""
+        if self.store is None or self._scoring_study is None:
+            self._say("Open a case with Score case first.")
+            return None
+        user = self.current_user()
+        if user is None:
+            self._say("Choose a scorer first (Scorer box in the toolbar).")
+            return None
+        if self.segmenter is None:
+            self._say(f"{self.segmenter_error} The segment model places each narrowing in a segment.")
+            return None
+        if self.stenosis is None:
+            self._say(f"{self.stenosis_error} See docs/labelling-and-training-guide.md to train and install one.")
+            return None
+        frame = self.cine.current_frame()
+        if frame is None:
+            self._say("Open a series first, then pick the frame that shows the narrowing best.")
+            return None
+        self.statusBar().showMessage("Looking for narrowings (AI), please wait...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        try:
+            suggestions = suggest(self.stenosis.candidates(frame), self.segmenter.predict(frame))
+        except Exception as exc:                     # a model problem must never break the form
+            QApplication.restoreOverrideCursor()
+            self.statusBar().clearMessage()
+            self._failed(f"AI suggestions failed: {exc}")
+            return None
+        QApplication.restoreOverrideCursor()
+        self.statusBar().clearMessage()
+        if not suggestions:
+            self._say("No narrowings found on this frame. Try another frame, or score it by hand.")
+            return []
+        chosen = self._choose_suggestions(suggestions)
+        if chosen is None:
+            self._say("No suggestions added.")
+            return None
+        self._add_suggested_lesions(chosen)
+        self._log_suggestions(user, suggestions, chosen)
+        return chosen
+
+    def _add_suggested_lesions(self, chosen: list[Suggestion]) -> None:
+        case = self.panel.case()
+        present = {seg for les in case.lesions for seg in les.segments}
+        new = [les for les in lesions_from(chosen) if les.segments[0] not in present]
+        if not new:
+            self._say("No new lesions added" + (" (those segments are already in the form)." if chosen else "."))
+            return
+        kept = [les for les in case.lesions if les != Lesion(segments=[])]      # drop the empty placeholder only
+        new = new[:max(MAX_LESIONS - len(kept), 0)]
+        removed = self.panel.set_case(Case(dominance=case.dominance, scoring_dominance=case.scoring_dominance,
+                                           lesions=kept + new, diffuse_segments=case.diffuse_segments))
+        self.panel.select_lesion(len(kept))
+        note = f" Not valid for this dominance and removed: {', '.join(removed)}." if removed else ""
+        self._say(f"Added {len(new)} suggested lesion(s) from the AI. Check each one and fill in the rest of the "
+                  f"form yourself; it is not saved until you press Save score.{note}")
+
+    def _log_suggestions(self, user: User, shown: list[Suggestion], chosen: list[Suggestion]) -> None:
+        events = [SuggestionEvent(series_uid=self._shown_uid or "", frame=self.cine.frame_index(), segment=s.segment,
+                                  score=s.score, pixels=s.pixels,
+                                  action="accepted" if any(s is c for c in chosen) else "rejected",
+                                  segment_model=f"segments {self.segmenter.card.trained_at}",
+                                  stenosis_model=f"stenosis {self.stenosis.card.trained_at}") for s in shown]
+        try:
+            self.store.log_suggestions(self._scoring_study[0], user.id, events)
+        except StoreError as exc:
+            self._warn(f"The AI suggestions were added, but this choice was not recorded: {exc}")
 
     def toggle_ai_segments(self, on: bool) -> bool:
         """Show or hide the AI segment overlay. Returns whether it is now shown."""
