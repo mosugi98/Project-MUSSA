@@ -284,3 +284,10 @@ def test_the_command_line_check_exits_nonzero_when_there_are_problems(tmp_path):
     (root / "images" / "2.png").unlink()
     done = run("check", "--folder", root)
     assert done.returncode == 1 and "2.png" in done.stdout
+
+
+def test_the_cvat_label_list_matches_the_25_segments_plus_stenosis_as_polygons():
+    labels = json.loads((ROOT / "tools" / "labelling" / "cvat_labels.json").read_text(encoding="utf-8"))
+    assert [item["name"] for item in labels] == list(SEGMENT_NAMES) + ["stenosis"]
+    assert all(item["type"] == "polygon" for item in labels)
+    assert len({item["color"] for item in labels}) == 26 and all(item["color"].startswith("#") and len(item["color"]) == 7 for item in labels)

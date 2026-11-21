@@ -111,8 +111,29 @@ def check_ai_model(data_dir: Path) -> Check:
         return Check(AI_CHECK_NAME, False, f"{path.name}: {exc}")
 
 
+STENOSIS_CHECK_NAME = "AI stenosis model (optional)"
+
+
+def check_stenosis_model(data_dir: Path) -> Check:
+    """Optional like the segment model: none installed is fine; if one is there it must load and run once."""
+    path = Path(data_dir) / "models" / "stenosis.onnx"
+    if not path.exists():
+        return Check(STENOSIS_CHECK_NAME, True,
+                     f"not installed (optional; copy stenosis.onnx and stenosis.card.json to {path.parent})")
+    try:
+        import numpy as np
+        from .ai.stenosis import StenosisFinder
+        finder = StenosisFinder.load(path)
+        frame = np.random.default_rng(0).integers(0, 255, size=(96, 96)).astype(np.uint8)
+        found = finder.candidates(frame)
+        return Check(STENOSIS_CHECK_NAME, True, f"{path.name} loaded; {len(found)} candidate(s) found on a test frame "
+                                                f"(trained {finder.card.trained_at})")
+    except Exception as exc:
+        return Check(STENOSIS_CHECK_NAME, False, f"{path.name}: {exc}")
+
+
 def run_selftest(data_dir: Path | None = None) -> list[Check]:
-    """Run every check; a failure is reported, never raised. The last check looks for the optional AI model
+    """Run every check; a failure is reported, never raised. The last two checks look for the optional AI models
     in `data_dir` (default: the MUSSA-data folder of the current user)."""
     results = []
     for name, function in CHECKS:
@@ -120,7 +141,9 @@ def run_selftest(data_dir: Path | None = None) -> list[Check]:
             results.append(Check(name, True, function()))
         except Exception as exc:                      # any failure means this install is not usable
             results.append(Check(name, False, f"{type(exc).__name__}: {exc}"))
-    results.append(check_ai_model(default_data_dir() if data_dir is None else Path(data_dir)))
+    folder = default_data_dir() if data_dir is None else Path(data_dir)
+    results.append(check_ai_model(folder))
+    results.append(check_stenosis_model(folder))
     return results
 
 

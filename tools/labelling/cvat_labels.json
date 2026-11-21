@@ -1,0 +1,158 @@
+[
+ {
+  "name": "1",
+  "color": "#F26D6D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "2",
+  "color": "#6D94F2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "3",
+  "color": "#BBF26D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "4",
+  "color": "#F26DE2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "16",
+  "color": "#6DF2DC",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "16a",
+  "color": "#F2B56D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "16b",
+  "color": "#8E6DF2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "16c",
+  "color": "#73F26D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "5",
+  "color": "#F26D9A",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "6",
+  "color": "#6DC0F2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "7",
+  "color": "#E7F26D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "8",
+  "color": "#D66DF2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "9",
+  "color": "#6DF2AF",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "9a",
+  "color": "#F2896D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "10",
+  "color": "#6D78F2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "10a",
+  "color": "#9FF26D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "11",
+  "color": "#F26DC6",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "12",
+  "color": "#6DEDF2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "12a",
+  "color": "#F2D16D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "12b",
+  "color": "#AA6DF2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "13",
+  "color": "#6DF283",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "14",
+  "color": "#F26D7E",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "14a",
+  "color": "#6DA5F2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "14b",
+  "color": "#CCF26D",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "15",
+  "color": "#F26DF2",
+  "type": "polygon",
+  "attributes": []
+ },
+ {
+  "name": "stenosis",
+  "color": "#FF0000",
+  "type": "polygon",
+  "attributes": []
+ }
+]

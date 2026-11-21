@@ -73,6 +73,28 @@ def test_a_broken_model_fails_with_the_reason(tmp_path):
     assert not check.ok and "segments.onnx" in check.detail
 
 
-def test_run_selftest_includes_the_ai_check_for_the_given_data_folder(tmp_path):
-    results = selftest.run_selftest(tmp_path)
-    assert results[-1].name == "AI segment model (optional)" and results[-1].ok
+def test_run_selftest_includes_both_ai_checks_for_the_given_data_folder(tmp_path):
+    results = {r.name: r for r in selftest.run_selftest(tmp_path)}
+    assert results["AI segment model (optional)"].ok and results["AI stenosis model (optional)"].ok
+
+
+def test_no_stenosis_model_is_fine_and_says_where_to_put_it(tmp_path):
+    check = selftest.check_stenosis_model(tmp_path)
+    assert check.ok and "not installed" in check.detail and "stenosis.onnx" in check.detail
+
+
+def test_a_working_stenosis_model_is_loaded_and_run_once(tmp_path):
+    from tests.ai.toy_models import make_toy_model, write_card
+    models = tmp_path / "models"
+    models.mkdir()
+    write_card(make_toy_model(models / "stenosis.onnx", size=32, channels=1, positive=(0,)), size=32, classes=["stenosis"])
+    check = selftest.check_stenosis_model(tmp_path)
+    assert check.ok and "found" in check.detail
+
+
+def test_a_broken_stenosis_model_fails_with_the_reason(tmp_path):
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "stenosis.onnx").write_bytes(b"not a model")
+    check = selftest.check_stenosis_model(tmp_path)
+    assert not check.ok and "stenosis.onnx" in check.detail

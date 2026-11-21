@@ -144,7 +144,8 @@ def test_notebook_installs_the_export_packages_and_checks_the_exported_model_bef
     nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
     code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "onnxscript" in code and "onnxruntime" in code and "onnx " in code + " "
-    assert "(1, 25" in code and code.index("onnxruntime.InferenceSession") < code.index("files.download")
+    assert '("segments", 25)' in code and '("stenosis", 1)' in code
+    assert code.index("onnxruntime.InferenceSession") < code.index("files.download")
 
 
 def test_notebook_works_on_colab_and_kaggle():
@@ -180,3 +181,27 @@ def test_the_kit_contains_the_sampling_module_byte_identical(kit):
     assert "mussa_ai/sampling.py" in names
     with zipfile.ZipFile(out) as z:
         assert z.read("mussa_ai/sampling.py") == (SRC_AI / "sampling.py").read_bytes()
+
+
+def load_notebook_code():
+    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    return chr(10).join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"), nb
+
+
+def test_notebook_trains_both_models_and_offers_four_files():
+    code, _ = load_notebook_code()
+    assert "--task segments" in code and "--task stenosis" in code
+    for name in ("segments.onnx", "segments.card.json", "stenosis.onnx", "stenosis.card.json"):
+        assert name in code, name
+
+
+def test_fine_tuning_on_own_data_is_off_by_default_and_warns_about_ethics_and_privacy():
+    code, nb = load_notebook_code()
+    assert "USE_OWN_DATA = False" in code
+    cell = next("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code" and "USE_OWN_DATA" in "".join(c["source"]))
+    assert "ethics" in cell.lower() and "de-identified" in cell and "--init-weights" in cell and "--extra-train" in cell
+
+
+def test_every_shell_command_in_the_notebook_is_on_one_line():
+    code, _ = load_notebook_code()
+    assert (chr(92) + chr(10)) not in code                      # no backslash line continuations in "!" commands
