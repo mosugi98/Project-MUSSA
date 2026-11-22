@@ -1,0 +1,780 @@
+{
+  "$defs": {
+    "CaseForm": {
+      "additionalProperties": false,
+      "properties": {
+        "diffuse_segments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diffuse Segments",
+          "type": "array"
+        },
+        "dominance": {
+          "anyOf": [
+            {
+              "enum": [
+                "right",
+                "left",
+                "co-dominant"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dominance"
+        },
+        "lesions": {
+          "items": {
+            "$ref": "#/$defs/LesionForm"
+          },
+          "title": "Lesions",
+          "type": "array"
+        },
+        "scoring_dominance": {
+          "anyOf": [
+            {
+              "enum": [
+                "right",
+                "left"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scoring Dominance"
+        }
+      },
+      "required": [
+        "lesions"
+      ],
+      "title": "CaseForm",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "Where a finding comes from: series, frame, C-arm angles and a box (x0, y0, x1, y1; x1 and y1 exclusive).",
+      "properties": {
+        "box": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Box"
+        },
+        "frame": {
+          "minimum": 0,
+          "title": "Frame",
+          "type": "integer"
+        },
+        "primary_angle": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Angle"
+        },
+        "secondary_angle": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secondary Angle"
+        },
+        "series_uid": {
+          "minLength": 1,
+          "title": "Series Uid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "series_uid",
+        "frame"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One candidate narrowing seen on one frame, as the vision models reported it.",
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelRef"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "overlap": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Overlap",
+          "type": "number"
+        },
+        "pixels": {
+          "minimum": 0,
+          "title": "Pixels",
+          "type": "integer"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "segment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Segment"
+        }
+      },
+      "required": [
+        "evidence",
+        "score",
+        "pixels",
+        "overlap"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "IssueRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "lesion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lesion"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "IssueRecord",
+      "type": "object"
+    },
+    "LesionForm": {
+      "additionalProperties": false,
+      "description": "The questions of one lesion, exactly as the engine's `Lesion` has them. None = not answered (a draft).",
+      "properties": {
+        "age_over_3_months": {
+          "anyOf": [
+            {
+              "enum": [
+                "no",
+                "yes",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age Over 3 Months"
+        },
+        "aorto_ostial": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aorto Ostial"
+        },
+        "beyond_first_visualized": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Beyond First Visualized"
+        },
+        "bifurcation": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bifurcation"
+        },
+        "bifurcation_angle_lt70": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bifurcation Angle Lt70"
+        },
+        "blunt_stump": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blunt Stump"
+        },
+        "bridging": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bridging"
+        },
+        "first_segment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Segment"
+        },
+        "heavy_calcification": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heavy Calcification"
+        },
+        "length_gt20": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length Gt20"
+        },
+        "occlusion": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Occlusion"
+        },
+        "segments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Segments",
+          "type": "array"
+        },
+        "severe_tortuosity": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Tortuosity"
+        },
+        "side_branch": {
+          "anyOf": [
+            {
+              "enum": [
+                "no",
+                "small",
+                "large",
+                "both"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Side Branch"
+        },
+        "thrombus": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thrombus"
+        },
+        "trifurcation": {
+          "anyOf": [
+            {
+              "maximum": 4,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trifurcation"
+        }
+      },
+      "required": [
+        "segments"
+      ],
+      "title": "LesionForm",
+      "type": "object"
+    },
+    "LesionProposal": {
+      "additionalProperties": false,
+      "description": "A lesion someone proposes, with the findings that support it. An AI proposal must cite findings.",
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "form": {
+          "$ref": "#/$defs/LesionForm"
+        },
+        "source": {
+          "enum": [
+            "ai",
+            "physician"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "form",
+        "source"
+      ],
+      "title": "LesionProposal",
+      "type": "object"
+    },
+    "ModelRef": {
+      "additionalProperties": false,
+      "description": "Which model file produced something: its role and its identity (training date and file hash).",
+      "properties": {
+        "identity": {
+          "minLength": 1,
+          "title": "Identity",
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "segments",
+            "stenosis"
+          ],
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "identity"
+      ],
+      "title": "ModelRef",
+      "type": "object"
+    },
+    "Review": {
+      "additionalProperties": false,
+      "description": "The AI's raw prediction is kept as it was; the physician's approved answer is stored next to it.",
+      "properties": {
+        "ai_raw_prediction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaseForm"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "physician_final_approved": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaseForm"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewed At"
+        },
+        "reviewer_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer Id"
+        },
+        "reviewer_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "resident",
+                "cardiologist"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer Level"
+        }
+      },
+      "title": "Review",
+      "type": "object"
+    },
+    "ScoreSummary": {
+      "additionalProperties": false,
+      "description": "A snapshot of what the SYNTAX engine returned. Never an input: to score, convert the form and run the engine.",
+      "properties": {
+        "diffuse_points": {
+          "default": 0.0,
+          "title": "Diffuse Points",
+          "type": "number"
+        },
+        "engine_version": {
+          "minLength": 1,
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/IssueRecord"
+          },
+          "title": "Issues",
+          "type": "array"
+        },
+        "lesion_totals": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Lesion Totals",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "invalid"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        }
+      },
+      "required": [
+        "status",
+        "engine_version"
+      ],
+      "title": "ScoreSummary",
+      "type": "object"
+    },
+    "SeriesInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "fps": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fps"
+        },
+        "frame_count": {
+          "minimum": 1,
+          "title": "Frame Count",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "cine",
+            "still"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "primary_angle": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Angle"
+        },
+        "secondary_angle": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secondary Angle"
+        },
+        "series_uid": {
+          "minLength": 1,
+          "title": "Series Uid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "series_uid",
+        "kind",
+        "frame_count"
+      ],
+      "title": "SeriesInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Everything known about one study: its series, what the models found, proposals, review and score.",
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "proposals": {
+      "items": {
+        "$ref": "#/$defs/LesionProposal"
+      },
+      "title": "Proposals",
+      "type": "array"
+    },
+    "review": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Review"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "score": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScoreSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "series": {
+      "items": {
+        "$ref": "#/$defs/SeriesInfo"
+      },
+      "title": "Series",
+      "type": "array"
+    },
+    "study_uid": {
+      "minLength": 1,
+      "title": "Study Uid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "study_uid",
+    "created_at"
+  ],
+  "title": "CaseAnalysis",
+  "type": "object"
+}
