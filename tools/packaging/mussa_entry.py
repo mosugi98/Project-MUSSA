@@ -11,7 +11,8 @@ from pathlib import Path
 def run_selftest() -> int:
     from cagsyntax import selftest
     results = selftest.run_selftest()
-    report = selftest.format_report(results)
+    from cagsyntax import __version__
+    report = f"MUSSA {__version__}" + chr(10) + chr(10) + selftest.format_report(results)
     folder = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
     try:
         (folder / "MUSSA-selftest.txt").write_text(report, encoding="utf-8")

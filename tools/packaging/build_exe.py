@@ -1,7 +1,7 @@
 """Build the portable MUSSA folder (no Python needed on the target PC).
 
     python tools/packaging/build_exe.py            # builds dist/MUSSA/MUSSA.exe and runs its self-test
-    python tools/packaging/build_exe.py --zip      # also writes dist/MUSSA-portable.zip
+    python tools/packaging/build_exe.py --zip      # also writes dist/MUSSA-<version>-portable.zip
 
 Needs PyInstaller (pip install pyinstaller) and the app's own dependencies on THIS PC. The result holds no
 patient data and no AI model: copy the four AI model files (segments and stenosis) to <data folder>\\models separately."""
@@ -15,6 +15,11 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+
+from cagsyntax import __version__  # noqa: E402
+
+ZIP_NAME = f"MUSSA-{__version__}-portable.zip"
 ENTRY = ROOT / "tools" / "packaging" / "mussa_entry.py"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
@@ -54,7 +59,7 @@ def selftest_exe(exe: Path) -> tuple[bool, str]:
 
 def write_readme(folder: Path) -> None:
     (folder / "READ ME FIRST.txt").write_text(
-        "MUSSA - Mataram University Syntax Score Assistant\n"
+        f"MUSSA {__version__} - Mataram University Syntax Score Assistant\n"
         "Educational decision-support tool. Not a certified medical device.\n\n"
         "To start: double-click MUSSA.exe. Nothing needs to be installed.\n"
         "Windows may say 'Windows protected your PC' the first time (the program is not code-signed):\n"
@@ -76,7 +81,7 @@ def make_zip(folder: Path, target: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the portable MUSSA folder.")
-    parser.add_argument("--zip", action="store_true", help="also write dist/MUSSA-portable.zip")
+    parser.add_argument("--zip", action="store_true", help=f"also write dist/{ZIP_NAME}")
     args = parser.parse_args()
     for folder in (DIST / "MUSSA", BUILD):
         shutil.rmtree(folder, ignore_errors=True)
@@ -92,7 +97,7 @@ def main() -> int:
     size = sum(p.stat().st_size for p in folder.rglob("*") if p.is_file()) / 1e6
     print(f"Built {exe} ({size:.0f} MB, self-test passed)")
     if args.zip:
-        target = DIST / "MUSSA-portable.zip"
+        target = DIST / ZIP_NAME
         make_zip(folder, target)
         print(f"Wrote {target} ({target.stat().st_size / 1e6:.0f} MB)")
     return 0

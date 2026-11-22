@@ -6,8 +6,8 @@
 
        python tools/packaging/build_exe.py --zip
 
-   This writes `dist\MUSSA-portable.zip` (about 140 MB) and checks the packaged program before it finishes.
-2. Copy `MUSSA-portable.zip` to the other PC (USB drive or a shared folder) and unzip it anywhere.
+   This writes `dist\MUSSA-2.0.0-portable.zip` (about 140 MB) and checks the packaged program before it finishes.
+2. Copy `MUSSA-2.0.0-portable.zip` to the other PC (USB drive or a shared folder) and unzip it anywhere.
 3. Double-click `MUSSA\MUSSA.exe`. Nothing else needs to be installed: no Python, no internet.
    Windows may say "Windows protected your PC" the first time because the program is not code-signed.
    Click **More info**, then **Run anyway**.
@@ -16,7 +16,7 @@
 
 | Item | Copy to the new PC? |
 |---|---|
-| `MUSSA-portable.zip` | Yes, that is the program |
+| `MUSSA-2.0.0-portable.zip` | Yes, that is the program |
 | `segments.onnx` + `segments.card.json` | Optional, for AI segments. Put both in `C:\Users\<name>\MUSSA-data\models\` |
 | `stenosis.onnx` + `stenosis.card.json` | Optional, for Suggest lesions. Same folder |
 | `theme.json` | Optional, your saved look. Put it in `C:\Users\<name>\MUSSA-data\` |
@@ -42,5 +42,6 @@ Install Python 3.13, copy or clone the project, then in PowerShell:
 
 ## Updating
 
+See `CHANGELOG.md` for what each version contains.
 Build a new zip after the app changes and replace the MUSSA folder on the other PC. Your data lives in
 `MUSSA-data`, outside that folder, so replacing the program keeps your cases.

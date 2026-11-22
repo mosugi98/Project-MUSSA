@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog
                                QMessageBox, QProgressDialog, QPushButton, QSplitter, QVBoxLayout,
                                QWidget)
 
+from . import __version__
 from .ai.overlay import render_overlay, segment_labels
 from .ai.segmenter import ModelUnavailable, Segmenter
 from .ai.stenosis import StenosisFinder
@@ -127,7 +128,7 @@ def format_summary(result: ImportResult) -> str:
 class MainWindow(QMainWindow):
     def __init__(self, data_dir: Path, segmenter: Segmenter | None = None):
         super().__init__()
-        self.setWindowTitle("MUSSA - XA viewer")
+        self.setWindowTitle(f"MUSSA {'.'.join(__version__.split('.')[:2])} - XA viewer")
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.theme_path = self.data_dir / "theme.json"
