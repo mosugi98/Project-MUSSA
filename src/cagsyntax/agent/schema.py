@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from ..contract.models import Angle, ContractModel, Probability, Segment, _segment
+from ..contract.models import Angle, ContractModel, ModelRef, Probability, Segment, _segment
 
 Dominance = Literal["right", "left", "co-dominant"]
 Medina = Literal["1,0,0", "0,1,0", "1,1,0", "1,1,1", "0,0,1", "1,0,1", "0,1,1"]
@@ -192,3 +192,4 @@ class RunPerceptionSummary(ContractModel):
     visible_segments: list[Segment] = Field(default_factory=list)
     pda_origin_detected: Literal["right", "left"] | None = None      # no model detects this yet
     candidates: list[RawCVLesionCandidate] = Field(default_factory=list)
+    models: list[ModelRef] = Field(default_factory=list)             # the model files that produced this run
