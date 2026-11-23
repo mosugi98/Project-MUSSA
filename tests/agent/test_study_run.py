@@ -68,3 +68,12 @@ def test_chosen_lessons_become_segment_only_form_lesions_in_the_proposed_order(t
     assert lesions_for_form(run, []) == []
     with pytest.raises(KeyError):
         lesions_for_form(run, ["AI_99"])
+
+
+def test_a_series_with_the_same_study_uid_but_another_patient_is_left_out(tmp_path):
+    lib, paths, study = library_of(tmp_path, runs=2)
+    mrn = read_header(paths[0]).mrn_hash
+    other = pydicom.dcmread(paths[1])
+    other.PatientID = "someone-else"
+    other.save_as(paths[1])
+    assert study_paths(lib, study, mrn) == [paths[0]] and study_paths(lib, study) == paths

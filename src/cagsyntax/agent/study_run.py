@@ -47,12 +47,14 @@ class StudyRun:
         return '{"runs":[' + runs + '],"reconciliation":' + self.reconciliation.model_dump_json() + "}"
 
 
-def study_paths(library: Library, study_uid: str) -> list[Path]:
-    """The stored series that belong to one study, in a stable order. Unreadable files are left out."""
+def study_paths(library: Library, study_uid: str, mrn_hash: str | None = None) -> list[Path]:
+    """The stored series that belong to one case, in a stable order. Unreadable files are left out. A case is its
+    study uid and, when given, the patient's hash too, so a mislabelled series of another patient is never pulled in."""
     found = []
     for entry in library.entries():
         try:
-            if read_header(entry.path).study_uid == study_uid:
+            header = read_header(entry.path)
+            if header.study_uid == study_uid and (mrn_hash is None or header.mrn_hash == mrn_hash):
                 found.append(entry.path)
         except ImportRejected:
             continue

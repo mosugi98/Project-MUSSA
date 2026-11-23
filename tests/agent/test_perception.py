@@ -205,3 +205,24 @@ def test_a_study_with_nothing_readable_is_an_error(tmp_path):
 def test_the_run_summary_still_refuses_unknown_fields():
     with pytest.raises(ValidationError):
         RunPerceptionSummary(series_instance_uid="1", sop_instance_uid="1", view_label="x", frame_count=1, mystery=1)
+
+
+def test_a_series_whose_header_cannot_be_read_is_refused_not_trusted(store, monkeypatch):
+    from cagsyntax.agent import perception
+    monkeypatch.setattr(perception, "read_header", lambda p: (_ for _ in ()).throw(ValueError("bad header")))
+    with pytest.raises(PerceptionError, match="header"):
+        perceive_series(first(store), FakeSegmenter(), FakeStenosis())
+
+
+def test_a_model_failure_on_one_series_skips_it_and_the_rest_carry_on(tmp_path):
+    store = make_store(tmp_path, n=2, frames=5)
+    paths = sorted(store.glob("*.dcm"))
+
+    class FailsOnce(FakeSegmenter):
+        def predict(self, frame, threshold=None):
+            if self.calls == 0:
+                self.calls += 1
+                raise RuntimeError("model exploded")
+            return super().predict(frame, threshold)
+    result = perceive_study(paths, FailsOnce(), FakeStenosis())
+    assert len(result.runs) == 1 and len(result.skipped) == 1 and "model exploded" in result.skipped[0][1]

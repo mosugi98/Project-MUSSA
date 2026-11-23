@@ -234,3 +234,15 @@ def test_a_run_records_the_study_it_came_from(tmp_path):
     path = sorted(store_of_one_study(tmp_path, runs=1).glob("*.dcm"))[0]
     run = perceive_study([path], FakeSegmenter(), FakeStenosis()).runs[0]
     assert run.study_instance_uid == read_header(path).study_uid and run.study_instance_uid.startswith("2.25.")
+
+
+def test_the_same_candidate_id_with_different_content_is_refused_so_the_result_never_depends_on_order():
+    a = run(candidates=[cand(score=0.9)])
+    b = run(candidates=[cand(score=0.5)])
+    with pytest.raises(ReconcileError):
+        reconcile([a, b])
+
+
+def test_the_reasoning_counts_frames_from_one_like_the_viewer():
+    les = reconcile([run(candidates=[cand(frame=12)])]).study.lesions[0]
+    assert "frame 13" in les.agent_reasoning and les.primary_evidence.frame_index == 12

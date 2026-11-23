@@ -195,3 +195,66 @@ def test_candidates_outside_every_segment_are_never_reported_as_no_narrowings(qa
     assert win.run_ai_on_study() == []
     msg = win.statusBar().currentMessage().lower()
     assert "no narrowings found" not in msg and "outside" in msg and "bad.dcm" in msg
+
+
+# ---- review follow-ups ----
+def test_accepted_means_what_reached_the_form_not_only_what_was_ticked(qapp, tmp_path):
+    from cagsyntax.scoring import Case, Lesion
+    win = case_window(tmp_path)
+    case = win.panel.case()
+    win.panel.set_case(Case(dominance=case.dominance, scoring_dominance=case.scoring_dominance,
+                            lesions=[Lesion(segments=["6"])], diffuse_segments=case.diffuse_segments))
+    choose(win, {"AI_6", "AI_11"})
+    assert win.run_ai_on_study() == ["AI_6", "AI_11"]
+    (row,) = win.store.ai_runs(win._scoring_study[0])
+    assert row.proposed == ["AI_6", "AI_11"] and row.accepted == ["AI_11"]       # segment 6 was already in the form
+
+
+def test_the_proposal_dialog_is_deleted_after_use(qapp, tmp_path, monkeypatch):
+    import shiboken6
+    from PySide6.QtCore import QEvent
+    win = case_window(tmp_path)
+    seen = []
+
+    def fake_exec(self):
+        seen.append(self)
+        return QDialog.DialogCode.Rejected
+    monkeypatch.setattr(ProposalDialog, "exec", fake_exec)
+    win.run_ai_on_study()
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    assert seen and not shiboken6.isValid(seen[0])
+
+
+def test_the_series_of_another_patient_with_the_same_study_uid_is_not_analysed(qapp, tmp_path):
+    win = open_window(tmp_path, make_source(tmp_path))
+    win.add_user("Ana", "resident")
+    paths = [Path(win.item_list.item(i).data(PATH_ROLE)) for i in range(win.item_list.count())]
+    other = pydicom.dcmread(paths[1])
+    other.StudyInstanceUID = pydicom.dcmread(paths[0]).StudyInstanceUID          # same study uid ...
+    other.PatientID = "someone-else"                                              # ... another patient
+    other.save_as(paths[1])
+    win.item_list.setCurrentRow(0)
+    assert win.score_selected_case()
+    win.segmenter, win.stenosis = FakeSegmenter(), FakeStenosis()
+    choose(win, set())
+    win.run_ai_on_study()
+    assert [r.series_instance_uid for r in win.proposed[0].runs] == [paths[0].stem]
+
+
+def test_the_jump_says_when_it_had_to_switch_the_folder_filter(qapp, tmp_path):
+    win = case_window(tmp_path)
+    series = [Path(win.item_list.item(i).data(PATH_ROLE)).stem for i in range(win.item_list.count())]
+    win.library.assign([series[1]], "Elsewhere")
+    win.refresh_list()
+    win.folder_combo.setCurrentText("Elsewhere")                                  # hides the other series
+    assert win._row_of(series[0]) is None
+    assert win.show_evidence(series[0], 1) is True
+    assert "all folders" in win.statusBar().currentMessage().lower()
+
+
+def test_show_evidence_reopens_a_series_that_is_selected_but_not_shown(qapp, tmp_path):
+    win = case_window(tmp_path)
+    series = Path(win.item_list.item(0).data(PATH_ROLE)).stem
+    win.item_list.setCurrentRow(0)
+    win._shown_uid = None                                                         # an earlier open had failed
+    assert win.show_evidence(series, 1) is True and win._shown_uid == series

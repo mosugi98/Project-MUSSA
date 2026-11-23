@@ -105,8 +105,16 @@ def reconcile(runs: list[RunPerceptionSummary], study_instance_uid: str | None =
     uid = _study_uid(runs, study_instance_uid)
     warnings: list[str] = []
     final_dominance = _dominance(runs, dominance, warnings)
-    labels = {r.series_instance_uid: r.view_label for r in runs}
-    unique = {c.candidate_id: c for r in runs for c in r.candidates}          # a repeated candidate counts once
+    labels: dict[str, str] = {}
+    for r in runs:
+        if labels.setdefault(r.series_instance_uid, r.view_label) != r.view_label:
+            raise ReconcileError(f"Series {r.series_instance_uid} appears twice with different view labels.")
+    unique: dict[str, RawCVLesionCandidate] = {}
+    for r in runs:
+        for c in r.candidates:                                                # an identical repeat counts once
+            if unique.setdefault(c.candidate_id, c) != c:
+                raise ReconcileError(f"Candidate {c.candidate_id} appears twice with different content, so the "
+                                     "result would depend on the order of the runs.")
     ordered = sorted(unique.values(), key=_rank)
     unplaced = [c for c in ordered if c.predicted_segment is None]
     lesions: list[LesionInput] = []
@@ -139,7 +147,7 @@ def reconcile(runs: list[RunPerceptionSummary], study_instance_uid: str | None =
         n = len(view_ids)
         text = (f"Narrowing suggested in segment {segment}, seen in {n} view{'s' if n != 1 else ''} ({views_text}). "
                 f"Best view: {labels.get(primary.series_instance_uid, primary.series_instance_uid)}, frame "
-                f"{primary.frame_index}, model score {primary.stenosis_score:.2f} (a model score, not a stenosis "
+                f"{primary.frame_index + 1}, model score {primary.stenosis_score:.2f} (a model score, not a stenosis "
                 "percentage).")
         if reasons:
             text += " Please check: " + "; ".join(reasons) + "."

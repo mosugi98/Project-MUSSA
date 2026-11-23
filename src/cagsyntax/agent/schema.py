@@ -154,7 +154,9 @@ class StudySyntaxOutput(ContractModel):
 
 # ---------------------------------------------------------------- what the vision models report per run
 class RawCVLesionCandidate(ContractModel):
-    """One candidate narrowing on one frame. Only what the models actually produce is required."""
+    """One candidate narrowing on one frame. Only what the models actually produce is required.
+    Note: in this app each stored file holds one series, named after its SOP instance uid, so `series_instance_uid`
+    here is that file stem and equals `sop_instance_uid`. `frame_index` counts from 0 (the viewer shows frame + 1)."""
     candidate_id: str = Field(min_length=1)
     predicted_segment: Segment | None = None            # None: outside every outlined segment
     stenosis_score: Probability                         # the stenosis model's score (not a calibrated certainty)

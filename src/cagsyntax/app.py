@@ -897,14 +897,15 @@ class MainWindow(QMainWindow):
     def _add_suggested_lesions(self, chosen: list[Suggestion]) -> None:
         self._add_lesions(lesions_from(chosen), bool(chosen))
 
-    def _add_lesions(self, proposed: list[Lesion], any_chosen: bool) -> None:
-        """Add segment-only lesions to the form, skipping segments already in it. Nothing else is filled in."""
+    def _add_lesions(self, proposed: list[Lesion], any_chosen: bool) -> set[str]:
+        """Add segment-only lesions to the form, skipping segments already in it. Nothing else is filled in. Returns
+        the segments that really reached the form."""
         case = self.panel.case()
         present = {seg for les in case.lesions for seg in les.segments} | set(case.diffuse_segments)
         wanted = [les for les in proposed if les.segments[0] not in present]
         if not wanted:
             self._say("No new lesions added" + (" (those segments are already in the form)." if any_chosen else "."))
-            return
+            return set()
         kept = [les for les in case.lesions if les != Lesion(segments=[])]      # drop the empty placeholder only
         new = wanted[:max(MAX_LESIONS - len(kept), 0)]
         over = len(wanted) - len(new)
@@ -922,12 +923,14 @@ class MainWindow(QMainWindow):
         if over:
             notes.append(f"{over} more were not added: a case holds at most {MAX_LESIONS} lesions (the limit).")
         note = (" " + " ".join(notes)) if notes else ""
+        reached = {seg for les in self.panel.case().lesions[len(kept):] for seg in les.segments}
         if added <= 0:
             self._say("No lesions added." + note)
-            return
+            return set()
         self.panel.select_lesion(len(kept))
         self._say(f"Added {added} suggested lesion(s) from the AI. Check each one and fill in the rest of the "
                   f"form yourself; it is not saved until you press Save score.{note}")
+        return reached
 
     def _log_suggestions(self, user: User, shown: list[Suggestion], chosen: list[Suggestion], frame: int) -> None:
         segment_model = getattr(self.segmenter, "model_id", self.segmenter.card.trained_at)
@@ -948,7 +951,10 @@ class MainWindow(QMainWindow):
         notes = [f"{name}: {why}" for name, why in run.skipped]
         dialog = ProposalDialog(run.reconciliation, lambda lesion_id: self.show_evidence(*run.evidence_of(lesion_id)),
                                 notes, self)
-        return dialog.chosen() if dialog.exec() == ProposalDialog.DialogCode.Accepted else None
+        try:
+            return dialog.chosen() if dialog.exec() == ProposalDialog.DialogCode.Accepted else None
+        finally:
+            dialog.deleteLater()                                           # do not keep one hidden dialog per run
 
     def run_ai_on_study(self) -> list[str] | None:
         """Run both AI models on the series of the open case, merge what they saw into proposed lesions and let the
@@ -974,7 +980,7 @@ class MainWindow(QMainWindow):
             self._say(f"{self.stenosis_error} See docs/labelling-and-training-guide.md to train and install one.")
             return None
         study_uid = self._scoring_study[0]
-        paths = study_paths(self.library, study_uid)
+        paths = study_paths(self.library, study_uid, self._scoring_study[1])
         if not paths:
             self._say("No series of the open case were found in the library.")
             return None
@@ -1009,8 +1015,9 @@ class MainWindow(QMainWindow):
         if chosen is None:
             self._say("No proposals added.")
             return None
-        self._add_lesions(lesions_for_form(run, chosen), bool(chosen))
-        self._log_ai_run(user, run, chosen)
+        added = self._add_lesions(lesions_for_form(run, chosen), bool(chosen))
+        segment_of = {les.lesion_id: les.involved_segments[0].segment_id for les in run.reconciliation.study.lesions}
+        self._log_ai_run(user, run, [i for i in chosen if segment_of[i] in added])       # what reached the form
         return chosen
 
     def _log_ai_run(self, user: User, run: StudyRun, chosen: list[str]) -> None:
@@ -1024,18 +1031,24 @@ class MainWindow(QMainWindow):
     def show_evidence(self, series_uid: str, frame: int) -> bool:
         """Select a series of the library and show one frame of it (the evidence behind an AI proposal)."""
         row = self._row_of(series_uid)
+        switched = False
         if row is None:
             self.folder_combo.setCurrentText(ALL_FOLDERS)                     # the folder filter may hide it
             row = self._row_of(series_uid)
+            switched = row is not None
         if row is None:
             self._say("That series is no longer in the library.")
             return False
         if self.item_list.currentRow() != row:
             self.item_list.setCurrentRow(row)
+        elif self._shown_uid != series_uid:
+            self._on_select(self.item_list.item(row))                         # selected but not shown: open it again
         if self._shown_uid != series_uid:
-            return False                                                      # it could not be opened (already said)
+            self._say("That series could not be opened.")
+            return False
         self.cine.show_frame(frame)
-        self._say(f"Showing frame {self.cine.frame_index() + 1} of the selected series.")
+        self._say(f"Showing frame {self.cine.frame_index() + 1} of the selected series."
+                  + (" The folder filter was switched to All folders to find it." if switched else ""))
         return True
 
     def _row_of(self, series_uid: str) -> int | None:

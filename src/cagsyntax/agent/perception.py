@@ -75,8 +75,8 @@ def perceive_series(path: Path, segmenter, stenosis, frames: list[int] | None = 
     candidates.sort(key=lambda c: (-c.stenosis_score, c.frame_index, c.candidate_id))
     try:
         study_uid = read_header(path).study_uid or None
-    except Exception:                                 # the run is still usable without it
-        study_uid = None
+    except Exception as exc:                          # without its study uid the series cannot be tied to a patient
+        raise PerceptionError(f"{path.name}: the header could not be read ({exc}).") from exc
     return RunPerceptionSummary(
         series_instance_uid=series_uid, sop_instance_uid=series.sop_instance_uid, study_instance_uid=study_uid,
         view_label=label_view(series.primary_angle, series.secondary_angle), frame_count=count, analysed_frames=chosen,
@@ -95,6 +95,8 @@ def perceive_study(paths: list[Path], segmenter, stenosis, frames: list[int] | N
             result.runs.append(perceive_series(path, segmenter, stenosis, frames, min_segment_pixels))
         except PerceptionError as exc:
             result.skipped.append((Path(path).name, str(exc)))
+        except Exception as exc:                      # a model or validation problem in one series must not end the study
+            result.skipped.append((Path(path).name, f"{Path(path).name}: {exc}"))
     if not result.runs:
         raise PerceptionError(f"None of the {len(paths)} file(s) could be analysed. First problem: "
                               f"{result.skipped[0][1] if result.skipped else 'no files were given'}")
