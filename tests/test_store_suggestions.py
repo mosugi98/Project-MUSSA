@@ -37,8 +37,8 @@ def store(tmp_path):
     s.close()
 
 
-def test_schema_version_is_two():
-    assert SCHEMA_VERSION == 2
+def test_schema_version_is_three():
+    assert SCHEMA_VERSION == 3
 
 
 def test_events_round_trip_in_order_with_who_and_when(store):
@@ -103,12 +103,12 @@ def test_a_version_one_database_is_upgraded_and_keeps_its_data(tmp_path):
         assert len(store.suggestion_events("2.25.1")) == 1
     finally:
         store.close()
-    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 2
+    assert sqlite3.connect(path).execute("PRAGMA user_version").fetchone()[0] == 3
 
 
-def test_a_new_database_is_created_at_version_two(tmp_path):
+def test_a_new_database_is_created_at_version_three(tmp_path):
     CaseStore(tmp_path / "x.sqlite").close()
-    assert sqlite3.connect(tmp_path / "x.sqlite").execute("PRAGMA user_version").fetchone()[0] == 2
+    assert sqlite3.connect(tmp_path / "x.sqlite").execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 def test_a_database_from_a_newer_version_is_still_refused(tmp_path):

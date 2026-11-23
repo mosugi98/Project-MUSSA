@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .scoring import VERSION, CaseResult
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SUGGESTION_ACTIONS = ("accepted", "rejected")
 LEVELS = ("resident", "cardiologist")
 
@@ -65,6 +65,21 @@ class SuggestionEvent:
 
 
 @dataclass
+class AiRun:
+    """What the AI proposed for a whole study, exactly as it produced it (`payload_json`), and which of the
+    proposed lesions the scorer took into the form. The scorer's final answer is the entry, never this."""
+    id: int
+    study_uid: str
+    user_id: int
+    payload_json: str
+    proposed: list[str]
+    accepted: list[str]
+    segment_model: str
+    stenosis_model: str
+    created_at: str
+
+
+@dataclass
 class ConfirmedCase:
     study_uid: str
     mrn_hash: str
@@ -91,6 +106,17 @@ CREATE TABLE suggestion_events(id INTEGER PRIMARY KEY, study_uid TEXT NOT NULL R
                                frame INTEGER NOT NULL, segment TEXT, score REAL NOT NULL, pixels INTEGER NOT NULL,
                                action TEXT NOT NULL CHECK(action IN ('accepted','rejected')),
                                segment_model TEXT NOT NULL, stenosis_model TEXT NOT NULL, logged_at TEXT NOT NULL);
+""" + """
+CREATE TABLE ai_runs(id INTEGER PRIMARY KEY, study_uid TEXT NOT NULL REFERENCES cases(study_uid),
+                     user_id INTEGER NOT NULL REFERENCES users(id), payload_json TEXT NOT NULL,
+                     proposed_json TEXT NOT NULL, accepted_json TEXT NOT NULL,
+                     segment_model TEXT NOT NULL, stenosis_model TEXT NOT NULL, created_at TEXT NOT NULL);
+"""
+_V2_TO_V3 = """
+CREATE TABLE IF NOT EXISTS ai_runs(id INTEGER PRIMARY KEY, study_uid TEXT NOT NULL REFERENCES cases(study_uid),
+                     user_id INTEGER NOT NULL REFERENCES users(id), payload_json TEXT NOT NULL,
+                     proposed_json TEXT NOT NULL, accepted_json TEXT NOT NULL,
+                     segment_model TEXT NOT NULL, stenosis_model TEXT NOT NULL, created_at TEXT NOT NULL);
 """
 _V1_TO_V2 = """
 CREATE TABLE IF NOT EXISTS suggestion_events(id INTEGER PRIMARY KEY, study_uid TEXT NOT NULL REFERENCES cases(study_uid),
@@ -148,7 +174,7 @@ class CaseStore:
                     finally:
                         copy.close()
                 with self._con:                          # upgrade in place; existing rows are untouched
-                    self._con.executescript(_V1_TO_V2)
+                    self._con.executescript(_V1_TO_V2 + _V2_TO_V3)
                     self._con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except sqlite3.DatabaseError as exc:
             self.close()
@@ -309,6 +335,28 @@ class CaseStore:
             "SELECT series_uid, frame, segment, score, pixels, action, segment_model, stenosis_model, user_id, "
             "logged_at FROM suggestion_events WHERE study_uid=? ORDER BY id", (study_uid,)).fetchall()
         return [SuggestionEvent(*row) for row in rows]
+
+    @_guarded
+    def log_ai_run(self, study_uid: str, user_id: int, payload_json: str, proposed: list[str],
+                   accepted: list[str], segment_model: str, stenosis_model: str) -> int:
+        """Keep the AI's raw proposal for a study and which of its lesions the scorer took. Returns the run id."""
+        if not set(accepted) <= set(proposed):
+            raise ValueError("The accepted lesions must all be among the proposed ones: "
+                             f"{sorted(set(accepted) - set(proposed))} were not proposed.")
+        with self._con:
+            cur = self._con.execute(
+                "INSERT INTO ai_runs(study_uid, user_id, payload_json, proposed_json, accepted_json, segment_model, "
+                "stenosis_model, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                (study_uid, user_id, payload_json, json.dumps(list(proposed)), json.dumps(list(accepted)),
+                 segment_model, stenosis_model, _now()))
+        return int(cur.lastrowid)
+
+    @_guarded
+    def ai_runs(self, study_uid: str) -> list[AiRun]:
+        rows = self._con.execute(
+            "SELECT id, study_uid, user_id, payload_json, proposed_json, accepted_json, segment_model, "
+            "stenosis_model, created_at FROM ai_runs WHERE study_uid=? ORDER BY id", (study_uid,)).fetchall()
+        return [AiRun(r[0], r[1], r[2], r[3], json.loads(r[4]), json.loads(r[5]), r[6], r[7], r[8]) for r in rows]
 
     @_guarded
     def get_meta(self, key: str) -> str | None:
