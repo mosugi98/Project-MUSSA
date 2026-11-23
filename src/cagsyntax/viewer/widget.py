@@ -144,6 +144,16 @@ class CineWidget(QWidget):
             self._timer.stop()
             self.frame_changed.emit(self.player.index)    # paused: the window may refresh the overlay
 
+    def show_frame(self, index: int) -> None:
+        """Pause and show one frame (the evidence jump of an AI proposal). An index out of range is clamped."""
+        if not self.player:
+            return
+        self.player.pause()
+        self._timer.stop()
+        self.play_btn.setText("Play")
+        self.player.seek(index)
+        self._show_frame()
+
     def _on_tick(self) -> None:
         self.player.tick()
         self._show_frame()

@@ -42,6 +42,7 @@ class Reconciliation(ContractModel):
     unplaced: list[RawCVLesionCandidate] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     merges: list[MergeNote] = Field(default_factory=list)
+    view_labels: dict[str, str] = Field(default_factory=dict)         # series uid -> "LAO 30 CRAN 20" etc.
 
 
 class Reconciler(Protocol):
@@ -157,7 +158,8 @@ def reconcile(runs: list[RunPerceptionSummary], study_instance_uid: str | None =
     if not unique:
         warnings.append("No narrowings were suggested in any run.")
     study = StudySyntaxInput(study_instance_uid=uid, dominance=final_dominance, lesions=lesions)
-    return Reconciliation(study=study, unplaced=unplaced, warnings=warnings, merges=merges)
+    return Reconciliation(study=study, unplaced=unplaced, warnings=warnings, merges=merges,
+                          view_labels=dict(sorted(labels.items())))
 
 
 class DeterministicReconciler:

@@ -42,6 +42,12 @@ def test_the_same_segment_seen_in_two_runs_becomes_one_draft_lesion_with_one_pri
     assert [v.series_instance_uid for v in les.supporting_views] == ["2.25.1"]
 
 
+def test_the_view_label_of_every_run_is_kept_so_a_person_can_be_told_which_view():
+    a = run("2.25.1", [cand("2.25.1")], label="LAO 30 CRAN 20")
+    b = run("2.25.2", [], label="RAO 20 CAUD 10")
+    assert reconcile([a, b]).view_labels == {"2.25.1": "LAO 30 CRAN 20", "2.25.2": "RAO 20 CAUD 10"}
+
+
 def test_different_segments_become_different_lesions_in_table_order():
     r = run(candidates=[cand(segment="11", rank=0), cand(segment="6", rank=1), cand(segment="8", rank=2)])
     assert [les.lesion_id for les in reconcile([r]).study.lesions] == ["AI_6", "AI_8", "AI_11"]
