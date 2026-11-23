@@ -29,7 +29,7 @@ exactly as before and the **AI segments** button explains what is missing.
 1. Build the training kit on this PC: `python tools/training/make_kit.py`. This writes
    `tools/training/dist/mussa-training-kit.zip`. The kit holds only code (the training script and copies of the
    app's loader, preprocessing and metrics). No patient data, no hospital files.
-2. Open `tools/training/MUSSA_ARCADE_segments.ipynb` on Google Colab (upload it at colab.research.google.com,
+2. Open `tools/training/MUSSA_train_both_models.ipynb` on Google Colab (upload it at colab.research.google.com,
    then Runtime > Change runtime type > GPU) or on Kaggle (a notebook with the GPU accelerator).
    On Kaggle, turn on the GPU accelerator and Internet in the notebook settings and add `mussa-training-kit.zip` as a
    dataset (Add data > Upload); the notebook finds it under `/kaggle/input`. On Colab it asks you to upload the zip.

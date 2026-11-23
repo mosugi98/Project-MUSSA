@@ -325,7 +325,7 @@ def test_the_card_records_which_encoder_weights_were_really_used():
 
 
 def notebook_code():
-    nb = json.loads((ROOT / "tools" / "training" / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads((ROOT / "tools" / "training" / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
     return chr(10).join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
 
 

@@ -27,7 +27,7 @@ Time: about 2 to 3 hours on a free GPU, mostly waiting. You need a Google accoun
 This writes `tools\training\dist\mussa-training-kit.zip`.
 
 **Step 2. Open the notebook in Colab.** Go to colab.research.google.com, choose **File > Upload notebook**, and
-pick `tools\training\MUSSA_ARCADE_segments.ipynb`. Then **Runtime > Change runtime type > GPU > Save**.
+pick `tools\training\MUSSA_train_both_models.ipynb`. Then **Runtime > Change runtime type > GPU > Save**.
 
 **Step 3. Run it.** Choose **Runtime > Run all**. When it asks, upload `mussa-training-kit.zip`. The notebook then:
 1. downloads ARCADE (about 1.2 GB) and checks it is intact,

@@ -19,14 +19,16 @@ SRC_AI = ROOT / "src" / "cagsyntax" / "ai"
 HERE = Path(__file__).resolve().parent
 SHARED = ("arcade.py", "preprocess.py", "metrics.py", "segment_names.py", "sampling.py")
 
-README = """MUSSA training kit (segment model, ARCADE)
+README = """MUSSA training kit (BOTH AI models, ARCADE): the segment model and the stenosis model
 
-Contents: train_segmentation.py and the package mussa_ai (verbatim copies of the app's shared
-modules). No patient data, no hospital files.
+Contents: train_segmentation.py (trains either model: --task segments or --task stenosis) and the package
+mussa_ai (verbatim copies of the app's shared modules). No patient data, no hospital files.
 
-Use: open MUSSA_ARCADE_segments.ipynb on a free cloud GPU (Google Colab or Kaggle), run all cells,
-upload this zip when asked, then download segments.onnx and segments.card.json and copy both to
-C:\\Users\\<you>\\MUSSA-data\\models\\ . See docs/ai-training.md in the project.
+Use: open MUSSA_train_both_models.ipynb on a free cloud GPU (Google Colab or Kaggle), run all cells,
+upload this zip when asked. The notebook trains the segment model, then the stenosis model, and downloads
+FOUR files. Copy all four to C:\\Users\\<you>\\MUSSA-data\\models\\ :
+    segments.onnx   segments.card.json   stenosis.onnx   stenosis.card.json
+Suggest lesions and Run AI on study need all four. See docs/labelling-and-training-guide.md in the project.
 
 Data: ARCADE, https://zenodo.org/records/10390295 (CC0). The notebook downloads it and checks the md5.
 Educational and research use; not a certified medical device.

@@ -180,7 +180,7 @@ Full step-by-step instructions: `docs/labelling-and-training-guide.md` and `docs
 
 ### 7.1 Route A: train on the public ARCADE dataset (no patient data, no approval)
 1. `python tools/training/make_kit.py` builds `tools\training\dist\mussa-training-kit.zip`.
-2. Open `tools\training\MUSSA_ARCADE_segments.ipynb` in Google Colab, set the runtime to **GPU**, **Run all**,
+2. Open `tools\training\MUSSA_train_both_models.ipynb` in Google Colab, set the runtime to **GPU**, **Run all**,
    upload the kit when asked (about 2 to 3 hours, mostly waiting).
 3. Download the four files and put them in `C:\Users\<you>\MUSSA-data\models\`.
 4. Check with `python -m cagsyntax.selftest`.

@@ -107,7 +107,7 @@ def test_training_script_geometry_helpers_are_correct_without_torch():
 
 
 def test_notebook_is_valid_and_has_the_cells_in_order(kit):
-    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads((TOOLS / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
     assert nb["nbformat"] == 4
     text = [("".join(c["source"]), c["cell_type"]) for c in nb["cells"]]
     code = "\n".join(t for t, kind in text if kind == "code")
@@ -141,7 +141,7 @@ def test_the_best_weights_are_saved_before_the_onnx_export_so_a_failed_export_lo
 
 
 def test_notebook_installs_the_export_packages_and_checks_the_exported_model_before_download():
-    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads((TOOLS / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
     code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "onnxscript" in code and "onnxruntime" in code and "onnx " in code + " "
     assert '("segments", 25)' in code and '("stenosis", 1)' in code
@@ -149,7 +149,7 @@ def test_notebook_installs_the_export_packages_and_checks_the_exported_model_bef
 
 
 def test_notebook_works_on_colab_and_kaggle():
-    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads((TOOLS / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
     code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     for needle in ("/kaggle/working", "/kaggle/input", "ON_COLAB", "__MACOSX"):
         assert needle in code, needle
@@ -184,7 +184,7 @@ def test_the_kit_contains_the_sampling_module_byte_identical(kit):
 
 
 def load_notebook_code():
-    nb = json.loads((TOOLS / "MUSSA_ARCADE_segments.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads((TOOLS / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
     return chr(10).join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"), nb
 
 
@@ -205,3 +205,15 @@ def test_fine_tuning_on_own_data_is_off_by_default_and_warns_about_ethics_and_pr
 def test_every_shell_command_in_the_notebook_is_on_one_line():
     code, _ = load_notebook_code()
     assert (chr(92) + chr(10)) not in code                      # no backslash line continuations in "!" commands
+
+
+def test_the_kit_readme_and_notebook_train_and_hand_over_both_models(kit):
+    import zipfile
+    readme = zipfile.ZipFile(kit[0]).read("README.txt").decode()
+    for name in ("segments.onnx", "segments.card.json", "stenosis.onnx", "stenosis.card.json", "MUSSA_train_both_models.ipynb"):
+        assert name in readme
+    nb = json.loads((TOOLS / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
+    code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    assert "--task segments" in code and "--task stenosis" in code
+    assert code.index("--task segments") < code.index("--task stenosis") < code.index("files.download")
+    assert "all four files" in code.lower()                                    # the final cell checks and says so
