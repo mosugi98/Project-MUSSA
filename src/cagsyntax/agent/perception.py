@@ -14,7 +14,7 @@ from pathlib import Path
 from ..ai.segment_names import SEGMENT_NAMES
 from ..ai.suggest import suggest
 from ..contract.models import ModelRef
-from ..dicom_import.reader import read_xa
+from ..dicom_import.reader import read_header, read_xa
 from ..dicom_import.views import label_view
 from .schema import RawCVLesionCandidate, RunPerceptionSummary
 
@@ -73,8 +73,12 @@ def perceive_series(path: Path, segmenter, stenosis, frames: list[int] | None = 
                 frame_index=index, primary_angle_deg=series.primary_angle, secondary_angle_deg=series.secondary_angle,
                 bbox_xyxy=tuple(int(v) for v in s.box) if s.box is not None else None, pixels=s.pixels))
     candidates.sort(key=lambda c: (-c.stenosis_score, c.frame_index, c.candidate_id))
+    try:
+        study_uid = read_header(path).study_uid or None
+    except Exception:                                 # the run is still usable without it
+        study_uid = None
     return RunPerceptionSummary(
-        series_instance_uid=series_uid, sop_instance_uid=series.sop_instance_uid,
+        series_instance_uid=series_uid, sop_instance_uid=series.sop_instance_uid, study_instance_uid=study_uid,
         view_label=label_view(series.primary_angle, series.secondary_angle), frame_count=count, analysed_frames=chosen,
         visible_segments=[SEGMENT_NAMES[c] for c in sorted(visible)], candidates=candidates,
         models=[ModelRef(name="segments", identity=_identity(segmenter)),

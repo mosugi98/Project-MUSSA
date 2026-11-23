@@ -115,7 +115,7 @@ class LesionInput(ContractModel):
 
 class StudySyntaxInput(ContractModel):
     study_instance_uid: str = Field(min_length=1)
-    dominance: Dominance
+    dominance: Dominance | None = None                  # None = not decided yet (the engine then asks for it)
     scoring_dominance: Literal["right", "left"] | None = None      # required by the engine when co-dominant
     lesions: list[LesionInput] = Field(default_factory=list)
     diffuse_disease_segments: list[Segment] = Field(default_factory=list)
@@ -141,7 +141,7 @@ class LesionBreakdown(ContractModel):
 
 class StudySyntaxOutput(ContractModel):
     study_instance_uid: str
-    dominance: Dominance
+    dominance: Dominance | None = None
     status: Status
     issues: list[IssueItem] = Field(default_factory=list)
     lesion_breakdowns: list[LesionBreakdown] = Field(default_factory=list)
@@ -186,6 +186,7 @@ class RunPerceptionSummary(ContractModel):
     """Everything the vision models reported for one angiographic run (series)."""
     series_instance_uid: str = Field(min_length=1)
     sop_instance_uid: str = Field(min_length=1)
+    study_instance_uid: str | None = None                # the de-identified study; reconciliation refuses to mix studies
     view_label: str
     frame_count: int = Field(ge=1)
     analysed_frames: list[int] = Field(default_factory=list)
