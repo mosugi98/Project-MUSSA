@@ -5,6 +5,7 @@ SYNTAX Score. It is **not a certified medical device** and does not replace clin
 Everything stays on this computer.
 
 Start it by double-clicking `Run MUSSA.bat` (keep the black window open while you work).
+The full manual, with tips for getting the most out of MUSSA and improving the AI, is `docs/user-manual.md`.
 
 ## 1. Import images
 
@@ -124,6 +125,16 @@ outlined segments are listed but cannot be added. Your accepts and rejects are r
 model versions, so the AI's accuracy can be checked later.
 
 Without the models the button explains what is missing and nothing else changes.
+
+## 9. Run AI on study (whole case)
+
+With both models installed, open a case with **Score case**, choose your scorer and click **Run AI on study**.
+MUSSA analyses every series of that case and lists one possible narrowing per segment, with the model score, the
+views it was seen in, the best frame and any "check:" notes. Select a row and press **Show in viewer** to see the
+frame it comes from. Tick the ones you agree with (nothing is ticked for you) and press **Add ... to the form**.
+Only the segment is filled in; dominance and every other answer stay yours. If narrowings were found outside the
+outlined segments, or a file could not be read, MUSSA says so. Cancelling records nothing; the raw proposal and
+what reached the form are stored with the model versions.
 
 ## Where your data is
 
