@@ -25,6 +25,24 @@ def test_widget_shows_frame_counter_and_steps(qapp, tmp_path):
     assert "LAO 30 CRAN 20" in w.view_label.text()
 
 
+def test_show_frame_pauses_the_cine_and_shows_that_frame(qapp, tmp_path):
+    w = CineWidget()
+    w.set_series(read_xa(make_xa(tmp_path / "a.dcm")), "x")
+    w.play_btn.click()
+    assert w.player.playing
+    seen = []
+    w.frame_changed.connect(seen.append)
+    w.show_frame(3)
+    assert not w.player.playing and w.play_btn.text() == "Play" and not w._timer.isActive()
+    assert w.frame_label.text() == "frame 4 / 5" and w.frame_index() == 3 and seen[-1] == 3
+    w.show_frame(99)                                            # out of range: the last frame, never a crash
+    assert w.frame_index() == 4
+
+
+def test_show_frame_with_nothing_shown_does_nothing(qapp):
+    CineWidget().show_frame(2)
+
+
 def test_zoom_is_clamped(qapp, tmp_path):
     w = CineWidget()
     w.set_series(read_xa(make_xa(tmp_path / "a.dcm")), "x")

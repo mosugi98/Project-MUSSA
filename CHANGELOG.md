@@ -3,6 +3,18 @@
 MUSSA is educational decision-support software for SYNTAX scoring. It is not a certified medical device, and no
 AI output in it is a diagnosis.
 
+## Unreleased (branch agent-core)
+
+### New
+- **Run AI on study.** One click runs both models over every series of the open case, merges what they saw into one
+  proposed lesion per segment (best view, supporting views, and plain-language reasons to check it) and lets the
+  scorer tick the ones they agree with. A "Show in viewer" button jumps to the exact series and frame. Only the
+  segment is filled in; dominance and every answer stay the scorer's. Needs the segment and stenosis models.
+- **Case store schema 3.** The AI's raw proposal for a study is kept (`ai_runs`) beside the scorer's own answer, with
+  which lesions were taken and the model files. An older store is upgraded automatically and a `.v2.bak` copy is kept.
+- Agent layer under `cagsyntax.agent` (typed perception, deterministic reconciliation, adapters to the verified
+  SYNTAX engine). Not yet used for key-frame choice, QCA, vessel diameter or foreshortening.
+
 ## 2.0.0 - 2026-11-22
 
 The second major version. It adds AI suggestions the scorer can accept or reject, a new look, a shared data
