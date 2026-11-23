@@ -258,3 +258,17 @@ def test_show_evidence_reopens_a_series_that_is_selected_but_not_shown(qapp, tmp
     win.item_list.setCurrentRow(0)
     win._shown_uid = None                                                         # an earlier open had failed
     assert win.show_evidence(series, 1) is True and win._shown_uid == series
+
+
+def test_a_blocked_action_shows_a_dialog_not_only_a_status_bar_line(qapp, tmp_path):
+    win = case_window(tmp_path)
+    win.stenosis, win.stenosis_error = None, "No stenosis model installed (expected at X)."
+    assert win.run_ai_on_study() is None and win.suggest_lesions() is None
+    assert len(win.messages) == 2 and all("stenosis model" in m.lower() for m in win.messages)
+
+
+@pytest.fixture(autouse=True)
+def no_modal_dialogs(monkeypatch):
+    """A blocked action now opens a dialog; in tests it must never wait for a click."""
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)

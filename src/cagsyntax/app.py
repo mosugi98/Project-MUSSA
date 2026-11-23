@@ -839,25 +839,25 @@ class MainWindow(QMainWindow):
         nothing. Nothing is scored by the AI. It refuses when the series on screen is not a series of the open
         case, so one patient's findings can never reach another patient's form."""
         if self.store is None or self._scoring_study is None:
-            self._say("Open a case with Score case first.")
+            self._failed("Open a case with Score case first.")
             return None
         if self.scoring_dock.isHidden():
-            self._say("The scoring panel is hidden. Open it with Score case first, so you can see the form the "
+            self._failed("The scoring panel is hidden. Open it with Score case first, so you can see the form the "
                       "suggestions would go into.")
             return None
         user = self.current_user()
         if user is None:
-            self._say("Choose a scorer first (Scorer box in the toolbar).")
+            self._failed("Choose a scorer first (Scorer box in the toolbar).")
             return None
         if self.segmenter is None:
-            self._say(f"{self.segmenter_error} The segment model places each narrowing in a segment.")
+            self._failed(f"{self.segmenter_error} The segment model places each narrowing in a segment.")
             return None
         if self.stenosis is None:
-            self._say(f"{self.stenosis_error} See docs/labelling-and-training-guide.md to train and install one.")
+            self._failed(f"{self.stenosis_error} See docs/labelling-and-training-guide.md to train and install one.")
             return None
         frame = self.cine.current_frame()
         if frame is None:
-            self._say("Open a series first, then pick the frame that shows the narrowing best.")
+            self._failed("Open a series first, then pick the frame that shows the narrowing best.")
             return None
         try:
             shown_study = self._selected_study()
@@ -963,26 +963,26 @@ class MainWindow(QMainWindow):
         of the open case are analysed, so one patient's findings can never reach another patient's form. The raw
         proposal is kept in the store beside the scorer's own answer; cancelling records nothing."""
         if self.store is None or self._scoring_study is None:
-            self._say("Open a case with Score case first.")
+            self._failed("Open a case with Score case first.")
             return None
         if self.scoring_dock.isHidden():
-            self._say("The scoring panel is hidden. Open it with Score case first, so you can see the form the "
+            self._failed("The scoring panel is hidden. Open it with Score case first, so you can see the form the "
                       "proposals would go into.")
             return None
         user = self.current_user()
         if user is None:
-            self._say("Choose a scorer first (Scorer box in the toolbar).")
+            self._failed("Choose a scorer first (Scorer box in the toolbar).")
             return None
         if self.segmenter is None:
-            self._say(f"{self.segmenter_error} The segment model places each narrowing in a segment.")
+            self._failed(f"{self.segmenter_error} The segment model places each narrowing in a segment.")
             return None
         if self.stenosis is None:
-            self._say(f"{self.stenosis_error} See docs/labelling-and-training-guide.md to train and install one.")
+            self._failed(f"{self.stenosis_error} See docs/labelling-and-training-guide.md to train and install one.")
             return None
         study_uid = self._scoring_study[0]
         paths = study_paths(self.library, study_uid, self._scoring_study[1])
         if not paths:
-            self._say("No series of the open case were found in the library.")
+            self._failed("No series of the open case were found in the library.")
             return None
         self.statusBar().showMessage("Looking for narrowings in every series of the case (AI), please wait...")
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)

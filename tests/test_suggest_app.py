@@ -238,3 +238,10 @@ def test_a_broken_stenosis_model_does_not_stop_the_app_or_the_segment_overlay(qa
     (models / "stenosis.onnx").write_bytes(b"junk")
     win = MainWindow(tmp_path / "data")
     assert win.stenosis is None and win.stenosis_error
+
+
+@pytest.fixture(autouse=True)
+def no_modal_dialogs(monkeypatch):
+    """A blocked action now opens a dialog; in tests it must never wait for a click."""
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
