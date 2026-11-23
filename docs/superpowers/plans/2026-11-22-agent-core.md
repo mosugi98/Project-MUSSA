@@ -43,5 +43,12 @@
 ### Slice 4: viewer wiring and storage
 Run-AI-on-study action, a proposals list that jumps to series and frame, live recalculation through `score_study`, AI-raw versus physician-final in the store (schema v3).
 
+**Done (commits 66c6262, 0c7f6c2, cea662d, 19a3f7b).** Rulings made while building it:
+- Live recalculation needed no new code: the scoring panel already recalculates through the engine on every edit, and the AI only adds segment-only lesions to that form. `score_study` stays the adapter for code that holds a `StudySyntaxInput`.
+- AI-raw versus physician-final: new store table `ai_runs` (schema v3, automatic `.v2.bak` backup) keeps the raw runs and reconciliation as JSON, the proposed lesion ids and the ones the scorer took, with the model files. The scorer's own answer stays the `entries` row. Conversion to the contract's `Review`/`CaseAnalysis` is not done: nothing reads the contract yet, so it would be unused code.
+- The dialog is modal, with a "Show in viewer" button that jumps the main window to the series and frame (`CineWidget.show_frame`). The box is not drawn on the frame yet.
+- Cancelling records nothing; an empty result and "ticked none" are recorded (they are findings about the model).
+- Only the series of the open case are analysed, so one patient's findings cannot reach another's form (tested with a second study in the library).
+
 ### Slice 5 (optional, off by default)
 An LLM reconciliation node behind the `Reconciler` interface.
