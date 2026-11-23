@@ -995,8 +995,15 @@ class MainWindow(QMainWindow):
             return None
         if not run.proposed_ids():
             self._log_ai_run(user, run, [])
-            self._say("No narrowings found in any series of this case. Score it by hand, or try the single-frame "
-                      "Suggest lesions on a frame you pick.")
+            recon = run.reconciliation
+            if recon.unplaced or run.skipped:                       # never report "none found" when something was left out
+                notes = [w for w in recon.warnings if "outside" in w] + [f"{n}: {why} (not analysed)"
+                                                                         for n, why in run.skipped]
+                self._say("No narrowing could be placed in a segment, but the check is incomplete. "
+                          + " ".join(notes) + " Score it by hand or look at the frames yourself.")
+            else:
+                self._say("No narrowings found in any series of this case. Score it by hand, or try the "
+                          "single-frame Suggest lesions on a frame you pick.")
             return []
         chosen = self._choose_proposals(run)
         if chosen is None:

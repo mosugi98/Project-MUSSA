@@ -173,3 +173,25 @@ def test_show_evidence_for_a_series_that_is_gone_says_so(qapp, tmp_path):
     win = case_window(tmp_path)
     assert win.show_evidence("no-such-series", 1) is False
     assert "no longer" in win.statusBar().currentMessage().lower()
+
+
+def test_candidates_outside_every_segment_are_never_reported_as_no_narrowings(qapp, tmp_path, monkeypatch):
+    from cagsyntax import app as app_module
+    from cagsyntax.agent.schema import RawCVLesionCandidate
+    real = app_module.run_study
+
+    def unplaced_run(*args, **kwargs):
+        run = real(*args, **kwargs)
+        stray = RawCVLesionCandidate(candidate_id="x", stenosis_score=0.9, segment_overlap=0.0,
+                                     series_instance_uid="s", sop_instance_uid="s", frame_index=0, pixels=5)
+        run.reconciliation = run.reconciliation.model_copy(update={
+            "study": run.reconciliation.study.model_copy(update={"lesions": []}), "unplaced": [stray],
+            "warnings": ["1 candidate(s) lie outside the outlined segments and were not turned into lesions; "
+                         "check them in the viewer."]})
+        run.skipped = [("bad.dcm", "unreadable")]
+        return run
+    monkeypatch.setattr(app_module, "run_study", unplaced_run)
+    win = case_window(tmp_path)
+    assert win.run_ai_on_study() == []
+    msg = win.statusBar().currentMessage().lower()
+    assert "no narrowings found" not in msg and "outside" in msg and "bad.dcm" in msg
