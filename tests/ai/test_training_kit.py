@@ -217,3 +217,12 @@ def test_the_kit_readme_and_notebook_train_and_hand_over_both_models(kit):
     assert "--task segments" in code and "--task stenosis" in code
     assert code.index("--task segments") < code.index("--task stenosis") < code.index("files.download")
     assert "all four files" in code.lower()                                    # the final cell checks and says so
+
+
+def test_the_notebook_announces_each_model_so_the_output_shows_stenosis_is_trained(kit):
+    nb = json.loads((TOOLS / "MUSSA_train_both_models.ipynb").read_text(encoding="utf-8"))
+    code = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
+    unpack = next(c for c in code if "kit unpacked" in c)
+    assert "stenosis" in unpack.lower() and "both models" in unpack.lower()
+    assert any("MODEL 1 OF 2" in c and "--task segments" in c for c in code)
+    assert any("MODEL 2 OF 2" in c and "--task stenosis" in c for c in code)
