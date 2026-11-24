@@ -19,6 +19,7 @@ CANVAS = 1000.0
 CAPTION_H = 34
 HIT_LOGICAL = 20.0           # click tolerance in logical units
 BADGE_PX = 14.0              # the number badge is always clickable
+VESSEL_INK = "#1B2A33"        # unselected vessels: dark in every theme, because the illustration is always light
 IMAGE_PATH = Path(__file__).parent / "assets" / "heart_anterior.png"
 LEGEND = "Dashed: position is schematic (not visible from the front)"
 CREDIT = "Heart illustration: DBCLS, CC BY 4.0, modified"
@@ -80,6 +81,7 @@ class ArteryMap(SegmentTree):
             return
         s, ox, oy = self._scale()
         accent, ink = QColor(th.primary), QColor(th.text)
+        vessel = QColor(VESSEL_INK)
 
         p.save()
         p.translate(ox, oy)
@@ -91,9 +93,9 @@ class ArteryMap(SegmentTree):
             g, on = ARTERY_GEO[seg], seg in self._selected
             ribbon = QPolygonF([QPointF(x, y) for x, y in
                                 outline(_POLYLINES[seg], g.width_start * CANVAS, g.width_end * CANVAS)])
-            fill = QColor(accent) if on else QColor(ink)
+            fill = QColor(accent) if on else QColor(vessel)
             fill.setAlpha(235 if on else (70 if g.visible else 35))
-            edge = QPen(QColor(th.primary_dark) if on else ink, 1.5 if (on or not g.visible) else 1.0)
+            edge = QPen(QColor(th.primary_dark) if on else vessel, 1.5 if (on or not g.visible) else 1.0)
             edge.setCosmetic(True)
             if not g.visible:
                 edge.setStyle(Qt.PenStyle.DashLine)
