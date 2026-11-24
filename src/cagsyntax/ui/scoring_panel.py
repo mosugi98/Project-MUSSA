@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QListWidget,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+                               QListWidget, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..form_state import (applicable_questions, case_from_json, case_to_json, change_dominance,
                           clean_lesion, removed_segments)
 from ..scoring import Case, CaseResult, Lesion, score_case
 from ..scoring.tables import MEDINA, SEGMENT_IDS, weight
 from ..scoring.validate import MAX_LESIONS, beyond_candidates
+from .artery_map import ArteryMap
 from .segment_tree import SegmentTree
 from .widgets import GlossyButton
 
@@ -193,10 +194,29 @@ class ScoringPanel(QWidget):
         buttons.addWidget(add)
         buttons.addWidget(remove)
         self.tree = SegmentTree()
-        self.tree.selection_changed.connect(self._on_tree)
+        self.map = ArteryMap()
+        for picker in (self.map, self.tree):
+            picker.selection_changed.connect(self._on_tree)
+        self.picker_stack = QStackedWidget()
+        self.picker_stack.addWidget(self.map)          # index 0: Diagram
+        self.picker_stack.addWidget(self.tree)         # index 1: Schematic
+        self.diagram_button = QPushButton("Diagram")
+        self.schematic_button = QPushButton("Schematic")
+        switch = QHBoxLayout()
+        self._picker_group = QButtonGroup(self)
+        self._picker_group.setExclusive(True)
+        for button, name in ((self.diagram_button, "diagram"), (self.schematic_button, "schematic")):
+            button.setCheckable(True)
+            self._picker_group.addButton(button)
+            button.clicked.connect(lambda _checked=False, n=name: self.show_picker(n))
+            switch.addWidget(button)
+        switch.addStretch(1)
+        self.diagram_button.setEnabled(self.map.image_available())
+        self.show_picker("diagram" if self.map.image_available() else "schematic")
         left.addWidget(self.lesion_list)
         left.addLayout(buttons)
-        left.addWidget(self.tree, 1)
+        left.addLayout(switch)
+        left.addWidget(self.picker_stack, 1)
         body.addLayout(left, 1)
 
         form = QWidget()
@@ -257,6 +277,18 @@ class ScoringPanel(QWidget):
         if not self._syncing and row >= 0:
             self.select_lesion(row)
 
+    def show_picker(self, name: str) -> None:
+        """Show the realistic Diagram or the stick-figure Schematic. The Diagram needs its image."""
+        if name == "diagram" and self.map.image_available():
+            self.picker_stack.setCurrentWidget(self.map)
+            self.diagram_button.setChecked(True)
+        else:
+            self.picker_stack.setCurrentWidget(self.tree)
+            self.schematic_button.setChecked(True)
+
+    def current_picker(self) -> str:
+        return "diagram" if self.picker_stack.currentWidget() is self.map else "schematic"
+
     def _on_tree(self, ids: list) -> None:
         if self._syncing or self._current < 0:
             return
@@ -278,10 +310,11 @@ class ScoringPanel(QWidget):
             if self._current >= 0:
                 self.lesion_list.setCurrentRow(self._current)
             les = case.lesions[self._current] if self._current >= 0 else None
-            self.tree.set_scoring_dominance(dom)
-            self.tree.set_selected(les.segments if les else [])
-            self.tree.set_first_segment(les.first_segment if les else None)
-            self.tree.setEnabled(les is not None)
+            for picker in (self.tree, self.map):
+                picker.set_scoring_dominance(dom)
+                picker.set_selected(les.segments if les else [])
+                picker.set_first_segment(les.first_segment if les else None)
+                picker.setEnabled(les is not None)
             applicable = applicable_questions(les, dom) if les else set()
             for field, _label, options in QUESTIONS:
                 row, _buttons, _layout = self._rows[field]
