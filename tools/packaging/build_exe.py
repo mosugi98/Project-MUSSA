@@ -8,6 +8,7 @@ patient data and no AI model: copy the four AI model files (segments and stenosi
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,8 @@ def pyinstaller_command() -> list[str]:
         cmd += ["--copy-metadata", name]
     for name in EXCLUDES:
         cmd += ["--exclude-module", name]
+    assets = ROOT / "src" / "cagsyntax" / "ui" / "assets"
+    cmd += ["--add-data", f"{assets}{os.pathsep}cagsyntax/ui/assets"]      # heart illustration and its licence
     return cmd + [str(ENTRY)]
 
 
@@ -68,6 +71,7 @@ def write_readme(folder: Path) -> None:
         "AI (optional): copy segments.onnx, segments.card.json, stenosis.onnx and stenosis.card.json into\n"
         "C:\\Users\\<your name>\\MUSSA-data\\models\\ . Without them everything else still works.\n\n"
         "To check this copy works: run  MUSSA.exe --selftest  and read MUSSA-selftest.txt.\n"
+        "Heart illustration in the segment diagram: DBCLS, CC BY 4.0 (modified); see cagsyntax/ui/assets.\n\n"
         "Do not copy cases.sqlite or salt.key to another PC unless you mean to move your real cases;\n"
         "if you do, copy both together.\n", encoding="utf-8")
 

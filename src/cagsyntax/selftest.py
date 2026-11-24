@@ -76,6 +76,14 @@ def _check_scoring_engine() -> str:
     return "a single mid-LAD stenosis scores 2.0"
 
 
+def _check_artery_map_image() -> str:
+    from PIL import Image
+    from .ui.artery_map import IMAGE_PATH
+    with Image.open(IMAGE_PATH) as im:
+        im.load()
+        return f"heart illustration {im.width}x{im.height}"
+
+
 CHECKS = (
     ("Qt (PySide6)", lambda: _check_qt()),
     ("DICOM JPEG Lossless decoder", lambda: _check_jpeg_lossless()),
@@ -84,6 +92,7 @@ CHECKS = (
     ("Image library (Pillow)", lambda: _check_pillow()),
     ("SQLite", lambda: _check_sqlite()),
     ("Scoring engine", lambda: _check_scoring_engine()),
+    ("Diagram image (artery map)", lambda: _check_artery_map_image()),
 )
 
 
