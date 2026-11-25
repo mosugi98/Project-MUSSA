@@ -12,3 +12,6 @@ dataset contoh/
 tools/training/dist/
 dist/
 build/
+
+.venv/
+.venv-train/
