@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QListWidget, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..form_state import (applicable_questions, case_from_json, case_to_json, change_dominance,
@@ -227,6 +227,8 @@ class ScoringPanel(QWidget):
         remove.clicked.connect(lambda: self.remove_lesion(self._current))
         buttons.addWidget(add)
         buttons.addWidget(remove)
+        self.enlarged_dialog: QDialog | None = None    # the big diagram window, made the first time it is asked for
+        self.enlarged_map: ArteryMap | None = None
         self.tree = SegmentTree()
         self.map = ArteryMap()
         for picker in (self.map, self.tree):
@@ -245,6 +247,11 @@ class ScoringPanel(QWidget):
             button.clicked.connect(lambda _checked=False, n=name: self.show_picker(n))
             switch.addWidget(button)
         switch.addStretch(1)
+        self.enlarge_button = QPushButton("Enlarge")
+        self.enlarge_button.setToolTip("Open the diagram in its own window")
+        self.enlarge_button.clicked.connect(lambda _checked=False: self.open_enlarged())
+        self.enlarge_button.setEnabled(self.map.image_available())
+        switch.addWidget(self.enlarge_button)
         self.diagram_button.setEnabled(self.map.image_available())
         self.show_picker("diagram" if self.map.image_available() else "schematic")
         left.addLayout(switch)                         # the picker gets the whole left column
@@ -323,6 +330,26 @@ class ScoringPanel(QWidget):
             self.picker_stack.setCurrentWidget(self.tree)
             self.schematic_button.setChecked(True)
 
+    def open_enlarged(self) -> None:
+        """Show the diagram in its own resizable window. It edits the same lesion as the panel and stays in sync."""
+        if not self.map.image_available():
+            return
+        if self.enlarged_dialog is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Coronary artery diagram")
+            layout = QVBoxLayout(dialog)
+            big = ArteryMap()
+            big.selection_changed.connect(self._on_tree)
+            layout.addWidget(big)
+            screen = self.screen()
+            height = min(980, int((screen.availableGeometry().height() if screen else 900) * 0.9))
+            dialog.resize(round(height * 0.95), height)
+            self.enlarged_dialog, self.enlarged_map = dialog, big
+        self._sync()
+        self.enlarged_dialog.show()
+        self.enlarged_dialog.raise_()
+        self.enlarged_dialog.activateWindow()
+
     def current_picker(self) -> str:
         return "diagram" if self.picker_stack.currentWidget() is self.map else "schematic"
 
@@ -347,7 +374,8 @@ class ScoringPanel(QWidget):
             if self._current >= 0:
                 self.lesion_list.setCurrentRow(self._current)
             les = case.lesions[self._current] if self._current >= 0 else None
-            for picker in (self.tree, self.map):
+            pickers = [self.tree, self.map] + ([self.enlarged_map] if self.enlarged_map is not None else [])
+            for picker in pickers:
                 picker.set_scoring_dominance(dom)
                 picker.set_selected(les.segments if les else [])
                 picker.set_first_segment(les.first_segment if les else None)

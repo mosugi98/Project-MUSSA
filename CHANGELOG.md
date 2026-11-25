@@ -9,8 +9,8 @@ AI output in it is a diagnosis.
 - **Coronary artery diagram.** The scoring panel has a realistic heart illustration beside the stick-figure tree
   (switch: Diagram | Schematic). All 25 segments are clickable on it. Segments that are hidden from the front view
   (circumflex system, posterior descending, posterolateral, left main) are drawn dashed because their position is
-  schematic. The illustration is by DBCLS, CC BY 4.0, modified. If its image file is missing, the panel uses the
-  Schematic.
+  schematic. An **Enlarge** button opens the diagram in its own resizable window, kept in sync with the panel. The
+  illustration is by DBCLS, CC BY 4.0, modified. If its image file is missing, the panel uses the Schematic.
 - **Run AI on study.** One click runs both models over every series of the open case, merges what they saw into one
   proposed lesion per segment (best view, supporting views, and plain-language reasons to check it) and lets the
   scorer tick the ones they agree with. A "Show in viewer" button jumps to the exact series and frame. Only the

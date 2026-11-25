@@ -70,3 +70,40 @@ def test_a_short_window_scrolls_the_panel_and_a_tall_one_fills_it(qapp):
     assert page.widget().height() == 900                          # tall enough: the content fills the window
     assert page.verticalScrollBar().maximum() == 0
     panel.close()
+
+
+def test_enlarge_opens_a_second_diagram_that_stays_in_sync(qapp):
+    panel = ScoringPanel()
+    panel.set_dominance("right")
+    assert panel.enlarged_map is None and panel.enlarge_button.isEnabled()
+    panel.enlarge_button.click()
+    big = panel.enlarged_map
+    assert big is not None
+    dialog = panel.enlarged_dialog
+    assert dialog is not None and dialog.isVisible()
+    panel.toggle_segment("6")                                      # change made in the panel shows in the window
+    assert big.selected() == ["6"]
+    big.resize(int(CANVAS), int(CANVAS) + CAPTION_H)               # a click in the window edits the lesion
+    x, y = midpoint("8")
+    QTest.mouseClick(big, Qt.MouseButton.LeftButton, pos=QPoint(round(x * CANVAS), round(y * CANVAS)))
+    assert panel.case().lesions[0].segments == ["6", "8"]
+    assert panel.map.selected() == ["6", "8"] and panel.tree.selected() == ["6", "8"]
+    dialog.close()
+
+
+def test_enlarge_reuses_the_same_window(qapp):
+    panel = ScoringPanel()
+    panel.enlarge_button.click()
+    first = panel.enlarged_dialog
+    first.close()
+    panel.enlarge_button.click()
+    assert panel.enlarged_dialog is first and first.isVisible()
+    first.close()
+
+
+def test_enlarge_is_disabled_without_the_image(qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr(artery_map, "IMAGE_PATH", tmp_path / "missing.png")
+    panel = ScoringPanel()
+    assert not panel.enlarge_button.isEnabled()
+    panel.open_enlarged()                                          # ignored: there is no image
+    assert panel.enlarged_dialog is None
