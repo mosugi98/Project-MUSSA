@@ -51,3 +51,22 @@ def test_outline_is_a_ribbon_that_tapers():
     ys_end = [y for x, y in poly if x > 0.99]
     assert math.isclose(max(ys_start) - min(ys_start), 0.10, abs_tol=1e-9)
     assert math.isclose(max(ys_end) - min(ys_end), 0.02, abs_tol=1e-9)
+
+
+def test_number_badges_do_not_overlap_for_either_dominance():
+    import itertools
+
+    from cagsyntax.scoring.tables import weight
+    from cagsyntax.ui.artery_geo import badge_point
+    for dom in ("right", "left"):
+        ids = [s for s in SEGMENT_IDS if weight(s, dom) is not None]
+        for a, b in itertools.combinations(ids, 2):
+            (x1, y1), (x2, y2) = badge_point(a), badge_point(b)
+            assert math.hypot(x1 - x2, y1 - y2) >= 0.045, (dom, a, b)     # badge radius is capped at 0.021 of the picture
+
+
+def test_a_badge_sits_on_its_own_segment():
+    from cagsyntax.ui.artery_geo import badge_point
+    for seg, g in ARTERY_GEO.items():
+        assert 0.2 <= g.badge_t <= 0.8, seg
+        assert badge_point(seg) == bezier(g.points, g.badge_t)

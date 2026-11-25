@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QListWidget, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..form_state import (applicable_questions, case_from_json, case_to_json, change_dominance,
@@ -13,6 +13,7 @@ from .artery_map import ArteryMap
 from .segment_tree import SegmentTree
 from .widgets import GlossyButton
 
+MIN_CONTENT_HEIGHT = 560
 BOOL = [("No", False), ("Yes", True)]
 DYNAMIC = "dynamic"
 QUESTIONS = [
@@ -41,6 +42,32 @@ DISCLAIMER = "Educational tool, not a certified medical device. Decision support
 
 def _same(a, b) -> bool:
     return a is b or (type(a) is type(b) and a == b)
+
+
+class _PageScroll(QScrollArea):
+    """Scrolls its content when the window is shorter than MIN_CONTENT_HEIGHT, and otherwise fills the window.
+
+    The content is sized here instead of by `setWidgetResizable`, because with word-wrapped labels inside Qt takes the
+    layout's preferred height as a minimum, which would stop the panel from ever shrinking to the window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def sizeHint(self):
+        inner = self.widget()
+        width = inner.sizeHint().width() if inner is not None else 0
+        return QSize(width, MIN_CONTENT_HEIGHT)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        inner = self.widget()
+        if inner is None:
+            return
+        room_h = self.height() - 2 * self.frameWidth()
+        bar = self.verticalScrollBar().sizeHint().width() if MIN_CONTENT_HEIGHT > room_h else 0
+        inner.resize(max(1, self.width() - 2 * self.frameWidth() - bar), max(room_h, MIN_CONTENT_HEIGHT))
 
 
 class ScoringPanel(QWidget):
@@ -164,7 +191,15 @@ class ScoringPanel(QWidget):
         return c.dominance if c.dominance in ("right", "left") else c.scoring_dominance
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
+        # The panel never gets squeezed below MIN_CONTENT_HEIGHT: a short window scrolls the panel instead, so the
+        # picker stays large and the question form stays usable.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        page = _PageScroll()
+        content = QWidget()
+        page.setWidget(content)
+        outer.addWidget(page)
+        root = QVBoxLayout(content)
         top = QHBoxLayout()
         self.dominance_combo = QComboBox()
         for text, value in [("Choose dominance", None), ("Right dominance", "right"),
@@ -179,12 +214,11 @@ class ScoringPanel(QWidget):
         top.addWidget(self.dominance_combo)
         top.addWidget(self.scoring_combo)
         top.addStretch(1)
-        root.addLayout(top)
 
         body = QHBoxLayout()
         left = QVBoxLayout()
         self.lesion_list = QListWidget()
-        self.lesion_list.setMaximumHeight(120)
+        self.lesion_list.setMaximumHeight(72)
         self.lesion_list.currentRowChanged.connect(self._on_lesion_row)
         buttons = QHBoxLayout()
         add = GlossyButton("Add lesion", variant="primary")
@@ -213,11 +247,13 @@ class ScoringPanel(QWidget):
         switch.addStretch(1)
         self.diagram_button.setEnabled(self.map.image_available())
         self.show_picker("diagram" if self.map.image_available() else "schematic")
-        left.addWidget(self.lesion_list)
-        left.addLayout(buttons)
-        left.addLayout(switch)
+        left.addLayout(switch)                         # the picker gets the whole left column
         left.addWidget(self.picker_stack, 1)
-        body.addLayout(left, 1)
+        body.addLayout(left, 9)
+        right = QVBoxLayout()                          # dominance, lesions, questions and result share the right column
+        right.addLayout(top)
+        right.addWidget(self.lesion_list)
+        right.addLayout(buttons)
 
         form = QWidget()
         form_layout = QVBoxLayout(form)
@@ -236,7 +272,8 @@ class ScoringPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(form)
-        body.addWidget(scroll, 2)
+        right.addWidget(scroll, 1)
+        body.addLayout(right, 11)
         root.addLayout(body, 1)
 
         self.result_label = QLabel()
@@ -245,12 +282,12 @@ class ScoringPanel(QWidget):
         self.result_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         scroll_result = QScrollArea()
         scroll_result.setWidgetResizable(True)
-        scroll_result.setMaximumHeight(170)
+        scroll_result.setMaximumHeight(110)
         scroll_result.setWidget(self.result_label)
-        root.addWidget(scroll_result)
+        right.addWidget(scroll_result)
         self.disclaimer_label = QLabel(DISCLAIMER)
         self.disclaimer_label.setWordWrap(True)
-        root.addWidget(self.disclaimer_label)
+        right.addWidget(self.disclaimer_label)
 
     def _fill_row(self, field: str, options) -> None:
         _row, buttons, layout = self._rows[field]

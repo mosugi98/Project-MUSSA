@@ -54,3 +54,19 @@ def test_a_missing_image_falls_back_to_the_schematic(qapp, tmp_path, monkeypatch
     assert not panel.diagram_button.isEnabled()
     panel.show_picker("diagram")                       # ignored: there is no image
     assert panel.current_picker() == "schematic"
+
+
+def test_a_short_window_scrolls_the_panel_and_a_tall_one_fills_it(qapp):
+    from cagsyntax.ui.scoring_panel import MIN_CONTENT_HEIGHT
+    panel = ScoringPanel()
+    page = panel.layout().itemAt(0).widget()           # the scroll area that holds the whole panel
+    panel.resize(900, 300)
+    panel.show()
+    qapp.processEvents()
+    assert page.widget().height() == MIN_CONTENT_HEIGHT          # too short: the content keeps its height and scrolls
+    assert page.verticalScrollBar().maximum() > 0
+    panel.resize(900, 900)
+    qapp.processEvents()
+    assert page.widget().height() == 900                          # tall enough: the content fills the window
+    assert page.verticalScrollBar().maximum() == 0
+    panel.close()

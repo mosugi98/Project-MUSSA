@@ -12,13 +12,14 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygonF
 
 from ..scoring.tables import SEGMENT_IDS
 from . import theme as T
-from .artery_geo import ARTERY_GEO, midpoint, outline, sample
+from .artery_geo import ARTERY_GEO, badge_point, outline, sample
 from .segment_tree import SegmentTree, _distance_to_segment
 
 CANVAS = 1000.0
 CAPTION_H = 34
 HIT_LOGICAL = 20.0           # click tolerance in logical units
 BADGE_PX = 14.0              # the number badge is always clickable
+BADGE_MAX_FRACTION = 0.021   # a badge radius never exceeds this fraction of the picture, so badges 0.045 apart never overlap
 VESSEL_INK = "#1B2A33"        # unselected vessels: dark in every theme, because the illustration is always light
 IMAGE_PATH = Path(__file__).parent / "assets" / "heart_anterior.png"
 LEGEND = "Dashed: position is schematic (not visible from the front)"
@@ -105,16 +106,16 @@ class ArteryMap(SegmentTree):
         p.restore()
 
         font = QFont(self.font())
-        font.setPixelSize(10)
         font.setBold(True)
-        p.setFont(font)
         for seg in SEGMENT_IDS:
             if not self._applicable(seg):
                 continue
             on = seg in self._selected
-            mx, my = midpoint(seg)
+            mx, my = badge_point(seg)
             cx, cy = ox + mx * CANVAS * s, oy + my * CANVAS * s
-            r = 13 if len(seg) > 2 else 11
+            r = min(13.0 if len(seg) > 2 else 11.0, BADGE_MAX_FRACTION * CANVAS * s)
+            font.setPixelSize(max(7, round(r * 0.9)))
+            p.setFont(font)
             ring = QPen(QColor(th.accent) if seg == self._first else (accent if on else ink),
                         3 if seg == self._first else 2)
             p.setPen(ring)
