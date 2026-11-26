@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QListWidget,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+                               QListWidget, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from ..form_state import (applicable_questions, case_from_json, case_to_json, change_dominance,
                           clean_lesion, removed_segments)
 from ..scoring import Case, CaseResult, Lesion, score_case
 from ..scoring.tables import MEDINA, SEGMENT_IDS, weight
 from ..scoring.validate import MAX_LESIONS, beyond_candidates
+from .artery_map import ArteryMap
 from .segment_tree import SegmentTree
 from .widgets import GlossyButton
 
+MIN_CONTENT_HEIGHT = 560
 BOOL = [("No", False), ("Yes", True)]
 DYNAMIC = "dynamic"
 QUESTIONS = [
@@ -40,6 +42,32 @@ DISCLAIMER = "Educational tool, not a certified medical device. Decision support
 
 def _same(a, b) -> bool:
     return a is b or (type(a) is type(b) and a == b)
+
+
+class _PageScroll(QScrollArea):
+    """Scrolls its content when the window is shorter than MIN_CONTENT_HEIGHT, and otherwise fills the window.
+
+    The content is sized here instead of by `setWidgetResizable`, because with word-wrapped labels inside Qt takes the
+    layout's preferred height as a minimum, which would stop the panel from ever shrinking to the window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def sizeHint(self):
+        inner = self.widget()
+        width = inner.sizeHint().width() if inner is not None else 0
+        return QSize(width, MIN_CONTENT_HEIGHT)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        inner = self.widget()
+        if inner is None:
+            return
+        room_h = self.height() - 2 * self.frameWidth()
+        bar = self.verticalScrollBar().sizeHint().width() if MIN_CONTENT_HEIGHT > room_h else 0
+        inner.resize(max(1, self.width() - 2 * self.frameWidth() - bar), max(room_h, MIN_CONTENT_HEIGHT))
 
 
 class ScoringPanel(QWidget):
@@ -163,7 +191,15 @@ class ScoringPanel(QWidget):
         return c.dominance if c.dominance in ("right", "left") else c.scoring_dominance
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
+        # The panel never gets squeezed below MIN_CONTENT_HEIGHT: a short window scrolls the panel instead, so the
+        # picker stays large and the question form stays usable.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        page = _PageScroll()
+        content = QWidget()
+        page.setWidget(content)
+        outer.addWidget(page)
+        root = QVBoxLayout(content)
         top = QHBoxLayout()
         self.dominance_combo = QComboBox()
         for text, value in [("Choose dominance", None), ("Right dominance", "right"),
@@ -178,12 +214,11 @@ class ScoringPanel(QWidget):
         top.addWidget(self.dominance_combo)
         top.addWidget(self.scoring_combo)
         top.addStretch(1)
-        root.addLayout(top)
 
         body = QHBoxLayout()
         left = QVBoxLayout()
         self.lesion_list = QListWidget()
-        self.lesion_list.setMaximumHeight(120)
+        self.lesion_list.setMaximumHeight(72)
         self.lesion_list.currentRowChanged.connect(self._on_lesion_row)
         buttons = QHBoxLayout()
         add = GlossyButton("Add lesion", variant="primary")
@@ -192,12 +227,40 @@ class ScoringPanel(QWidget):
         remove.clicked.connect(lambda: self.remove_lesion(self._current))
         buttons.addWidget(add)
         buttons.addWidget(remove)
+        self.enlarged_dialog: QDialog | None = None    # the big diagram window, made the first time it is asked for
+        self.enlarged_map: ArteryMap | None = None
         self.tree = SegmentTree()
-        self.tree.selection_changed.connect(self._on_tree)
-        left.addWidget(self.lesion_list)
-        left.addLayout(buttons)
-        left.addWidget(self.tree, 1)
-        body.addLayout(left, 1)
+        self.map = ArteryMap()
+        for picker in (self.map, self.tree):
+            picker.selection_changed.connect(self._on_tree)
+        self.picker_stack = QStackedWidget()
+        self.picker_stack.addWidget(self.map)          # index 0: Diagram
+        self.picker_stack.addWidget(self.tree)         # index 1: Schematic
+        self.diagram_button = QPushButton("Diagram")
+        self.schematic_button = QPushButton("Schematic")
+        switch = QHBoxLayout()
+        self._picker_group = QButtonGroup(self)
+        self._picker_group.setExclusive(True)
+        for button, name in ((self.diagram_button, "diagram"), (self.schematic_button, "schematic")):
+            button.setCheckable(True)
+            self._picker_group.addButton(button)
+            button.clicked.connect(lambda _checked=False, n=name: self.show_picker(n))
+            switch.addWidget(button)
+        switch.addStretch(1)
+        self.enlarge_button = QPushButton("Enlarge")
+        self.enlarge_button.setToolTip("Open the diagram in its own window")
+        self.enlarge_button.clicked.connect(lambda _checked=False: self.open_enlarged())
+        self.enlarge_button.setEnabled(self.map.image_available())
+        switch.addWidget(self.enlarge_button)
+        self.diagram_button.setEnabled(self.map.image_available())
+        self.show_picker("diagram" if self.map.image_available() else "schematic")
+        left.addLayout(switch)                         # the picker gets the whole left column
+        left.addWidget(self.picker_stack, 1)
+        body.addLayout(left, 9)
+        right = QVBoxLayout()                          # dominance, lesions, questions and result share the right column
+        right.addLayout(top)
+        right.addWidget(self.lesion_list)
+        right.addLayout(buttons)
 
         form = QWidget()
         form_layout = QVBoxLayout(form)
@@ -216,7 +279,8 @@ class ScoringPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(form)
-        body.addWidget(scroll, 2)
+        right.addWidget(scroll, 1)
+        body.addLayout(right, 11)
         root.addLayout(body, 1)
 
         self.result_label = QLabel()
@@ -225,12 +289,12 @@ class ScoringPanel(QWidget):
         self.result_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         scroll_result = QScrollArea()
         scroll_result.setWidgetResizable(True)
-        scroll_result.setMaximumHeight(170)
+        scroll_result.setMaximumHeight(110)
         scroll_result.setWidget(self.result_label)
-        root.addWidget(scroll_result)
+        right.addWidget(scroll_result)
         self.disclaimer_label = QLabel(DISCLAIMER)
         self.disclaimer_label.setWordWrap(True)
-        root.addWidget(self.disclaimer_label)
+        right.addWidget(self.disclaimer_label)
 
     def _fill_row(self, field: str, options) -> None:
         _row, buttons, layout = self._rows[field]
@@ -257,6 +321,38 @@ class ScoringPanel(QWidget):
         if not self._syncing and row >= 0:
             self.select_lesion(row)
 
+    def show_picker(self, name: str) -> None:
+        """Show the realistic Diagram or the stick-figure Schematic. The Diagram needs its image."""
+        if name == "diagram" and self.map.image_available():
+            self.picker_stack.setCurrentWidget(self.map)
+            self.diagram_button.setChecked(True)
+        else:
+            self.picker_stack.setCurrentWidget(self.tree)
+            self.schematic_button.setChecked(True)
+
+    def open_enlarged(self) -> None:
+        """Show the diagram in its own resizable window. It edits the same lesion as the panel and stays in sync."""
+        if not self.map.image_available():
+            return
+        if self.enlarged_dialog is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Coronary artery diagram")
+            layout = QVBoxLayout(dialog)
+            big = ArteryMap()
+            big.selection_changed.connect(self._on_tree)
+            layout.addWidget(big)
+            screen = self.screen()
+            height = min(980, int((screen.availableGeometry().height() if screen else 900) * 0.9))
+            dialog.resize(round(height * 0.95), height)
+            self.enlarged_dialog, self.enlarged_map = dialog, big
+        self._sync()
+        self.enlarged_dialog.show()
+        self.enlarged_dialog.raise_()
+        self.enlarged_dialog.activateWindow()
+
+    def current_picker(self) -> str:
+        return "diagram" if self.picker_stack.currentWidget() is self.map else "schematic"
+
     def _on_tree(self, ids: list) -> None:
         if self._syncing or self._current < 0:
             return
@@ -278,10 +374,12 @@ class ScoringPanel(QWidget):
             if self._current >= 0:
                 self.lesion_list.setCurrentRow(self._current)
             les = case.lesions[self._current] if self._current >= 0 else None
-            self.tree.set_scoring_dominance(dom)
-            self.tree.set_selected(les.segments if les else [])
-            self.tree.set_first_segment(les.first_segment if les else None)
-            self.tree.setEnabled(les is not None)
+            pickers = [self.tree, self.map] + ([self.enlarged_map] if self.enlarged_map is not None else [])
+            for picker in pickers:
+                picker.set_scoring_dominance(dom)
+                picker.set_selected(les.segments if les else [])
+                picker.set_first_segment(les.first_segment if les else None)
+                picker.setEnabled(les is not None)
             applicable = applicable_questions(les, dom) if les else set()
             for field, _label, options in QUESTIONS:
                 row, _buttons, _layout = self._rows[field]

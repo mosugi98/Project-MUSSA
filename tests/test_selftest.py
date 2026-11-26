@@ -98,3 +98,10 @@ def test_a_broken_stenosis_model_fails_with_the_reason(tmp_path):
     (models / "stenosis.onnx").write_bytes(b"not a model")
     check = selftest.check_stenosis_model(tmp_path)
     assert not check.ok and "stenosis.onnx" in check.detail
+
+
+def test_the_diagram_image_check_passes_and_is_listed():
+    results = selftest.run_selftest()
+    row = next(r for r in results if r.name == "Diagram image (artery map)")
+    assert row.ok, row.detail
+    assert "1200x1200" in row.detail
